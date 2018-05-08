@@ -1,33 +1,39 @@
 """Classes used in the main application."""
 from uuid import uuid4
 
+import json
 import requests
+from datetime import datetime
+
 from kytos.core import log
 from kytos.core.helpers import now
-from kytos.core.interface import UNI
+from kytos.core.interface import UNI, TAG
 from napps.kytos.mef_eline import settings
 
 
 class EVC:
     """Class that represents a E-Line Virtual Connection."""
 
-    def __init__(self, uni_a, uni_z, name, start_date=None, end_date=None,
-                 bandwidth=None, primary_links=None, backup_links=None,
-                 dynamic_backup_path=None, creation_time=None):
+
+    def __init__(self, uni_a=None, uni_z=None, name=None, start_date=None,
+                 end_date=None, bandwidth=None, primary_links=None,
+                 backup_links=None, dynamic_backup_path=None,
+                 creation_time=None, validate=True):
         """Create an EVC instance with the provided parameters.
 
         Do some basic validations to attributes.
         """
 
-        if uni_a is None or uni_z is None or name is None:
-            raise TypeError("Invalid arguments")
+        if validate is True:
+            if uni_a is None or uni_z is None or name is None:
+                raise TypeError("Invalid arguments")
 
-        if ((not isinstance(uni_a, UNI)) or
-                (not isinstance(uni_z, UNI))):
-            raise TypeError("Invalid UNI")
+            if ((not isinstance(uni_a, UNI)) or
+                    (not isinstance(uni_z, UNI))):
+                raise TypeError("Invalid UNI")
 
-        if not uni_a.is_valid() or not uni_z.is_valid():
-            raise TypeError("Invalid UNI")
+            if not uni_a.is_valid() or not uni_z.is_valid():
+                raise TypeError("Invalid UNI")
 
         self._id = uuid4().hex
         self.uni_a = uni_a
@@ -41,15 +47,15 @@ class EVC:
         self.backup_links = backup_links
         self.dynamic_backup_path = dynamic_backup_path
         # dict with the user original request (input)
-        self._requested = None
+        self._requested = {}
         # circuit being used at the moment if this is an active circuit
-        self.current_path = None
+        self.current_path = []
         # primary circuit offered to user IF one or more links were provided in
         # the request
-        self.primary_path = None
+        self.primary_path = []
         # backup circuit offered to the user IF one or more links were provided
         # in the request
-        self.backup_path = None
+        self.backup_path = []
         # datetime of user request for a EVC (or datetime when object was
         # created)
         self.request_time = now()
@@ -78,6 +84,67 @@ class EVC:
 
     def remove(self):
         pass
+
+    def as_dict(self):
+        """Dict representation for the EVC object."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "uni_a": self.uni_a.as_dict(),
+            "uni_z": self.uni_z.as_dict(),
+            "start_date": self.start_date.strftime("%Y-%m-%dT%H:%M:%S"),
+            "end_date": self.start_date.strftime("%Y-%m-%dT%H:%M:%S"),
+            "bandwidth": self.bandwidth,
+            "primary_links": self.primary_links,
+            "backup_links": self.backup_links,
+            "dynamic_backup_path": self.dynamic_backup_path,
+            "_requested": self._requested,
+            "current_path": self.current_path,
+            "primary_path": self.primary_path,
+            "backup_path": self.backup_path,
+            "request_time": self.request_time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "creation_time": self.creation_time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "owner": self.owner,
+            "active": self.active,
+            "enabled": self.enabled,
+            "priority": self.priority
+        }
+
+
+    def as_json(self):
+        """Json representation for the EVC object."""
+        return json.dumps(self.as_dict())
+
+    @classmethod
+    def load_from_dict(cls, circuit_dict):
+        """Load a circuit from dict and return an object."""
+        allowed_fields = ["_id","name", "uni_a", "uni_z", "start_date",
+                          "end_date", "bandwidth", "primary_links",
+                          "backup_links", "dynamic_backup_path", "_requested",
+                          "current_path", "primary_path", "backup_path",
+                          "request_time", "creation_time", "owner", "active",
+                          "enabled", "priority"]
+
+        circuit = cls(validate=False)
+
+        for field in allowed_fields:
+            if 'date' in field or 'time' in field:
+                value = datetime.strptime(circuit_dict.get(field),
+                                         "%Y-%m-%dT%H:%M:%S")
+            elif 'uni'in field:
+                value = TAG.load_from_dict(circuit_dict.get(field))
+            elif '_id' in field:
+                value = circuit_dict.get('id')
+            else:
+                value = circuit_dict.get(field)
+            setattr(circuit, field, value)
+
+        return circuit
+
+    @classmethod
+    def load_from_json(cls, circuit_json):
+        """Load a circuit from json and return an object."""
+        return cls.load_from_dict(json.loads(circuit_json))
 
     @property
     def id(self):  # pylint: disable=invalid-name

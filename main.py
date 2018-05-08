@@ -147,7 +147,6 @@ class Main(KytosNApp):
 
         return uni
 
-    # New methods
     @rest('/v2/evc/', methods=['GET'])
     def list_circuits(self):
         pass
