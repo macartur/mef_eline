@@ -6,7 +6,7 @@ import requests
 from datetime import datetime
 
 from kytos.core import log
-from kytos.core.helpers import now
+from kytos.core.helpers import now, get_time
 from kytos.core.interface import UNI, TAG
 from napps.kytos.mef_eline import settings
 
@@ -15,60 +15,114 @@ class EVC:
     """Class that represents a E-Line Virtual Connection."""
 
 
-    def __init__(self, uni_a=None, uni_z=None, name=None, start_date=None,
-                 end_date=None, bandwidth=None, primary_links=None,
-                 backup_links=None, dynamic_backup_path=None,
-                 creation_time=None, validate=True):
+    def __init__(self, *args, **kwargs):
         """Create an EVC instance with the provided parameters.
 
         Do some basic validations to attributes.
         """
+        self.validate(*args, **kwargs)
+        self.fill_attributes(*args,**kwargs)
 
-        if validate is True:
-            if uni_a is None or uni_z is None or name is None:
-                raise TypeError("Invalid arguments")
+    def fill_attributes(self, *args, **kwargs):
+        """Fill all attributes given in the EVC object."""
+        for attribute, default in self.default_attributes.items():
+            value = kwargs.get(attribute, default)
 
-            if ((not isinstance(uni_a, UNI)) or
-                    (not isinstance(uni_z, UNI))):
-                raise TypeError("Invalid UNI")
+            if attribute == '_id':
+                value = kwargs.get('id', default)
 
-            if not uni_a.is_valid() or not uni_z.is_valid():
-                raise TypeError("Invalid UNI")
+            elif 'time' in attribute or 'date' in attribute:
+                if isinstance(value, str) or isinstance(value, dict):
+                    value = get_time(value)
 
-        self._id = uuid4().hex
-        self.uni_a = uni_a
-        self.uni_z = uni_z
-        self.name = name
-        self.start_date = start_date if start_date else now()
-        self.end_date = end_date
-        # Bandwidth profile
-        self.bandwidth = bandwidth
-        self.primary_links = primary_links
-        self.backup_links = backup_links
-        self.dynamic_backup_path = dynamic_backup_path
-        # dict with the user original request (input)
-        self._requested = {}
-        # circuit being used at the moment if this is an active circuit
-        self.current_path = []
-        # primary circuit offered to user IF one or more links were provided in
-        # the request
-        self.primary_path = []
-        # backup circuit offered to the user IF one or more links were provided
-        # in the request
-        self.backup_path = []
-        # datetime of user request for a EVC (or datetime when object was
-        # created)
-        self.request_time = now()
-        # datetime when the circuit should be activated. now() || schedule()
-        self.creation_time =  creation_time or now()
-        self.owner = None
-        # Operational State
-        self.active = False
-        # Administrative State
-        self.enabled = False
-        # Service level provided in the request. "Gold", "Silver", ...
-        self.priority = 0
-        # (...) everything else from request must be @property
+            setattr(self, attribute, value)
+
+    @property
+    def default_attributes(self):
+        """Default attributes in the EVC object."""
+        return {
+                '_id': uuid4().hex,
+                'name': None,
+                'uni_a': None,
+                'uni_z': None,
+                'start_date': now(),
+                'end_date': None,
+                # Bandwidth profile
+                'bandwidth': None,
+                'primary_links': None,
+                'backup_links': None,
+                'dynamic_backup_path': None,
+                # dict with the user original request (input)
+                '_requested': {},
+                # circuit being used at the moment if this is an active circuit
+                'current_path': [],
+                # primary circuit offered to user IF one or more links were
+                # provided in the request
+                'primary_path': [],
+                # backup circuit offered to the user IF one or more links were
+                # provided in the request
+                'backup_path': [],
+                # datetime of user request for a EVC (or datetime when object
+                # was created)
+                'request_time': now(),
+                # datetime when the circuit should be activated.
+                # now() || schedule()
+                'creation_time': now(),
+                # Operational State
+                'active': False,
+                # Administrative State
+                'enabled': False,
+                # Service level provided in the request. "Gold", "Silver", ...
+                'priority': 0,
+               }
+
+    @property
+    def required_attributes(self):
+        """Required attributes in the EVC object."""
+        return ['name', 'uni_a', 'uni_z']
+
+    def validate(self, *args, **kwargs):
+        """Validate the arguments.
+
+        Raises:
+            TypeError: Rases an error if the error message.
+        """
+        for attribute in self.required_attributes:
+            if attribute not in kwargs.keys():
+                raise TypeError(f"{attribute} is required.")
+            if 'uni' in attribute:
+                uni = kwargs.get(attribute)
+                if not isinstance(uni, UNI):
+                    raise TypeError(f"Invalid UNI: {attribute}.")
+                if not uni.is_valid():
+                    raise TypeError("Invalid UNI {attribute}.")
+
+    def as_dict(self):
+        """Dict representation for the EVC object."""
+        evc_dict = {}
+
+        for attribute in self.default_attributes:
+            if '_id' in attribute:
+                evc_dict['id'] = getattr(self, attribute)
+            elif 'time' in attribute or 'date' in attribute:
+                value = getattr(self, attribute)
+                if value:
+                    evc_dict[attribute] = value.strftime("%Y-%m-%dT%H:%M:%S")
+            elif 'uni' in attribute:
+                uni = getattr(self, attribute)
+                evc_dict[attribute] = uni.as_dict()
+            else:
+                evc_dict[attribute] = getattr(self, attribute)
+        return evc_dict
+
+    def as_json(self):
+        """Json representation for the EVC object."""
+        return json.dumps(self.as_dict())
+
+    @property
+    def id(self):  # pylint: disable=invalid-name
+        """Return this EVC's ID."""
+        return self._id
 
     def create(self):
         pass
@@ -78,78 +132,13 @@ class EVC:
 
     def change_path(self, path):
         pass
+
     def reprovision(self):
         """Force the EVC (re-)provisioning"""
         pass
 
     def remove(self):
         pass
-
-    def as_dict(self):
-        """Dict representation for the EVC object."""
-        return {
-            "id": self.id,
-            "name": self.name,
-            "uni_a": self.uni_a.as_dict(),
-            "uni_z": self.uni_z.as_dict(),
-            "start_date": self.start_date.strftime("%Y-%m-%dT%H:%M:%S"),
-            "end_date": self.start_date.strftime("%Y-%m-%dT%H:%M:%S"),
-            "bandwidth": self.bandwidth,
-            "primary_links": self.primary_links,
-            "backup_links": self.backup_links,
-            "dynamic_backup_path": self.dynamic_backup_path,
-            "_requested": self._requested,
-            "current_path": self.current_path,
-            "primary_path": self.primary_path,
-            "backup_path": self.backup_path,
-            "request_time": self.request_time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "creation_time": self.creation_time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "owner": self.owner,
-            "active": self.active,
-            "enabled": self.enabled,
-            "priority": self.priority
-        }
-
-
-    def as_json(self):
-        """Json representation for the EVC object."""
-        return json.dumps(self.as_dict())
-
-    @classmethod
-    def load_from_dict(cls, circuit_dict):
-        """Load a circuit from dict and return an object."""
-        allowed_fields = ["_id","name", "uni_a", "uni_z", "start_date",
-                          "end_date", "bandwidth", "primary_links",
-                          "backup_links", "dynamic_backup_path", "_requested",
-                          "current_path", "primary_path", "backup_path",
-                          "request_time", "creation_time", "owner", "active",
-                          "enabled", "priority"]
-
-        circuit = cls(validate=False)
-
-        for field in allowed_fields:
-            if 'date' in field or 'time' in field:
-                value = datetime.strptime(circuit_dict.get(field),
-                                         "%Y-%m-%dT%H:%M:%S")
-            elif 'uni'in field:
-                value = TAG.load_from_dict(circuit_dict.get(field))
-            elif '_id' in field:
-                value = circuit_dict.get('id')
-            else:
-                value = circuit_dict.get(field)
-            setattr(circuit, field, value)
-
-        return circuit
-
-    @classmethod
-    def load_from_json(cls, circuit_json):
-        """Load a circuit from json and return an object."""
-        return cls.load_from_dict(json.loads(circuit_json))
-
-    @property
-    def id(self):  # pylint: disable=invalid-name
-        """Return this EVC's ID."""
-        return self._id
 
     @staticmethod
     def send_flow_mods(switch, flow_mods):
