@@ -15,104 +15,134 @@ class EVC:
     """Class that represents a E-Line Virtual Connection."""
 
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, name, uni_a, uni_z, start_date=None, end_date=None,
+                 bandwidth=None, primary_links=None, backup_links=None,
+                 dynamic_backup_path=None, creation_time=None):
         """Create an EVC instance with the provided parameters.
 
         Do some basic validations to attributes.
         """
-        self.validate(*args, **kwargs)
-        self.fill_attributes(*args,**kwargs)
+        self.validate(name, uni_a, uni_z)
 
-    def fill_attributes(self, *args, **kwargs):
-        """Fill all attributes given in the EVC object."""
-        for attribute, default in self.default_attributes.items():
-            value = kwargs.get(attribute, default)
+        self._id = uuid4().hex
+        self.uni_a = uni_a
+        self.uni_z = uni_z
+        self.name = name
+        self.start_date = start_date if start_date else now()
+        self.end_date = end_date
+        # Bandwidth profile
+        self.bandwidth = bandwidth
+        self.primary_links = primary_links
+        self.backup_links = backup_links
+        self.dynamic_backup_path = dynamic_backup_path
+        # dict with the user original request (input)
+        self._requested = {}
+        # circuit being used at the moment if this is an active circuit
+        self.current_path = []
+        # primary circuit offered to user IF one or more links were provided in
+        # the request
+        self.primary_path = []
+        # backup circuit offered to the user IF one or more links were provided
+        # in the request
+        self.backup_path = []
+        # datetime of user request for a EVC (or datetime when object was
+        # created)
+        self.request_time = now()
+        # datetime when the circuit should be activated. now() || schedule()
+        self.creation_time =  creation_time or now()
+        self.owner = None
+        # Operational State
+        self.active = False
+        # Administrative State
+        self.enabled = False
+        # Service level provided in the request. "Gold", "Silver", ...
+        self.priority = 0
 
-            if attribute == '_id':
-                value = kwargs.get('id', default)
-
-            elif 'time' in attribute or 'date' in attribute:
-                if isinstance(value, str) or isinstance(value, dict):
-                    value = get_time(value)
-
-            setattr(self, attribute, value)
-
-    @property
-    def default_attributes(self):
-        """Default attributes in the EVC object."""
-        return {
-                '_id': uuid4().hex,
-                'name': None,
-                'uni_a': None,
-                'uni_z': None,
-                'start_date': now(),
-                'end_date': None,
-                # Bandwidth profile
-                'bandwidth': None,
-                'primary_links': None,
-                'backup_links': None,
-                'dynamic_backup_path': None,
-                # dict with the user original request (input)
-                '_requested': {},
-                # circuit being used at the moment if this is an active circuit
-                'current_path': [],
-                # primary circuit offered to user IF one or more links were
-                # provided in the request
-                'primary_path': [],
-                # backup circuit offered to the user IF one or more links were
-                # provided in the request
-                'backup_path': [],
-                # datetime of user request for a EVC (or datetime when object
-                # was created)
-                'request_time': now(),
-                # datetime when the circuit should be activated.
-                # now() || schedule()
-                'creation_time': now(),
-                # Operational State
-                'active': False,
-                # Administrative State
-                'enabled': False,
-                # Service level provided in the request. "Gold", "Silver", ...
-                'priority': 0,
-               }
-
-    @property
-    def required_attributes(self):
-        """Required attributes in the EVC object."""
-        return ['name', 'uni_a', 'uni_z']
-
-    def validate(self, *args, **kwargs):
-        """Validate the arguments.
+    def validate(self, name=None, uni_a=None, uni_z=None):
+        """Validate the EVC arguments.
 
         Raises:
-            TypeError: Rases an error if the error message.
+            TypeError: Raises an error with the error message, when the params
+                       are invalid.
         """
-        for attribute in self.required_attributes:
-            if attribute not in kwargs.keys():
-                raise TypeError(f"{attribute} is required.")
-            if 'uni' in attribute:
-                uni = kwargs.get(attribute)
-                if not isinstance(uni, UNI):
-                    raise TypeError(f"Invalid UNI: {attribute}.")
-                if not uni.is_valid():
-                    raise TypeError("Invalid UNI {attribute}.")
+        # Verify required attributes
+        if name is None:
+            raise TypeError("name is required.")
+
+        if uni_a is None:
+            raise TypeError("uni_a is required")
+
+        if uni_z is None:
+            raise TypeError('uni_z is required')
+
+        # Verify UNIs instances
+        if not isinstance(uni_a, UNI):
+            raise TypeError("Invalid uni_a.")
+
+        if not isinstance(uni_z, UNI):
+            raise TypeError("Invalid uni_z.")
+
+        # Verify if UNIs is valid
+        if not uni_a.is_valid():
+            raise TypeError("Invalid uni_a.")
+
+        if not uni_z.is_valid():
+            raise TypeError("Invalid uni_z.")
 
     def as_dict(self):
-        """Dict representation for the EVC object."""
-        evc_dict = {}
+        """A dictionary representing an EVC object."""
+        evc_dict = {"id": self.id, "name": self.name,
+                    "uni_a": self.uni_a.as_dict(),
+                    "uni_z": self.uni_z.as_dict()}
 
-        for attribute in self.default_attributes:
-            if '_id' in attribute:
-                evc_dict['id'] = getattr(self, attribute)
-            elif 'time' in attribute or 'date' in attribute:
-                value = getattr(self, attribute)
-                if value:
-                    evc_dict[attribute] = value.strftime("%Y-%m-%dT%H:%M:%S")
-            elif 'uni' in attribute:
-                uni = getattr(self, attribute)
-                evc_dict[attribute] = uni.as_dict()
-            else:
-                evc_dict[attribute] = getattr(self, attribute)
+        if self.start_date:
+            date = self.start_date.strftime("%Y-%m-%dT%H:%M:%S")
+            evc_dict["start_date"] = date
+
+        if self.end_date:
+            date = self.end_date.strftime("%Y-%m-%dT%H:%M:%S")
+            evc_dict['end_date'] = date
+
+        if self.bandwidth:
+            evc_dict['bandwidth'] = self.bandwidth
+
+        if self.primary_links:
+            evc_dict['primary_links'] = self.primary_links
+
+        if self.backup_links:
+            evc_dict['backup_links'] = self.backup_links
+
+        if self.primary_links:
+            evc_dict['dynamic_backup_path'] = self.dynamic_backup_path
+
+        if self._requested:
+            evc_dict['_requested'] = self._requested
+
+        if self.current_path:
+           evc_dict['current_path'] = self.current_path
+
+        if self.primary_path:
+           evc_dict['primary_path'] = self.primary_path
+
+        if self.backup_path:
+           evc_dict['backup_path'] = self.backup_path
+
+        if self.request_time:
+           time = self.request_time.strftime("%Y-%m-%dT%H:%M:%S")
+           evc_dict['request_time'] = time
+
+        if self.owner:
+           evc_dict['owner'] = self.owner
+
+        if self.active:
+           evc_dict['active'] = self.active
+
+        if self.enabled:
+           evc_dict['enabled'] = self.enabled
+
+        if self.priority:
+           evc_dict['priority'] = self.priority
+
         return evc_dict
 
     def as_json(self):

@@ -191,12 +191,17 @@ class Main(KytosNApp):
         """
         # Try to create the circuit object
         data = request.get_json()
-        # get UNIs
-        data['uni_a'] = self._get_uni_from_request(data.get('uni_a'))
-        data['uni_z'] = self._get_uni_from_request(data.get('uni_z'))
+
+        name = data.get('name', None)
+        uni_a = self._get_uni_from_request(data.get('uni_a'))
+        uni_z = self._get_uni_from_request(data.get('uni_z'))
+        start_date = data.get('start_date', None)
+        end_date = data.get('end_date', None)
+        creation_time = data.get('creation_time', None)
 
         try:
-            circuit = EVC(**data)
+            circuit = EVC(name, uni_a, uni_z, start_date=start_date,
+                          end_date=end_date, creation_time=creation_time)
         except TypeError as exception:
             return jsonify("Bad request: {}".format(exception)), 400
 
@@ -252,11 +257,21 @@ class Main(KytosNApp):
     def schedule_all_stored_circuits(self):
         """Schedule all stored circuits"""
         store = self.store_items.get('circuits')
-        for evc in store.data.values():
-            options = evc.copy()
-            options['uni_a'] = self._get_uni_from_request(evc.get('uni_a'))
-            options['uni_z'] = self._get_uni_from_request(evc.get('uni_z'))
-            circuit = EVC(**options)
+
+        for data in store.data.values():
+            # get the evc attributes
+            name = data.get('name', None)
+            uni_a = self._get_uni_from_request(data.get('uni_a'))
+            uni_z = self._get_uni_from_request(data.get('uni_z'))
+            start_date = data.get('start_date', None)
+            end_date = data.get('end_date', None)
+            creation_time = data.get('creation_time', None)
+
+            # we no need try catch , because the data is already validated
+            circuit = EVC(name, uni_a, uni_z, start_date=start_date,
+                          end_date=end_date, creation_time=creation_time)
+
+            # schedule a circuit deploy event
             self.schedule.circuit_deploy(circuit)
             log.info(f'{circuit.id} loadded.')
 
