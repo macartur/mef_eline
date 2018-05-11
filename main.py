@@ -271,8 +271,8 @@ class Main(KytosNApp):
             circuit = EVC(name, uni_a, uni_z, start_date=start_date,
                           end_date=end_date, creation_time=creation_time)
 
-            # schedule a circuit deploy event
-            self.schedule.circuit_deploy(circuit)
+            # schedule a circuit deploy event if the event is not deployed yet
+            self.schedule.circuit_deploy(circuit, execute_elapsed_time=False)
             log.info(f'{circuit.id} loadded.')
 
     def save_evc(self, circuit):

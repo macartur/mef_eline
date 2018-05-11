@@ -49,7 +49,7 @@ class EVC:
         # created)
         self.request_time = now()
         # datetime when the circuit should be activated. now() || schedule()
-        self.creation_time =  creation_time or now()
+        self.creation_time = get_time(creation_time) or now()
         self.owner = None
         # Operational State
         self.active = False
@@ -130,6 +130,10 @@ class EVC:
         if self.request_time:
            time = self.request_time.strftime("%Y-%m-%dT%H:%M:%S")
            evc_dict['request_time'] = time
+
+        if self.creation_time:
+           time = self.creation_time.strftime("%Y-%m-%dT%H:%M:%S")
+           evc_dict['creation_time'] = time
 
         if self.owner:
            evc_dict['owner'] = self.owner
