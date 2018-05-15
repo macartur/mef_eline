@@ -62,32 +62,31 @@ class EVC:
         """Validate the EVC arguments.
 
         Raises:
-            TypeError: Raises an error with the error message, when the params
-                       are invalid.
+            ValueError: raised when object attributes are invalid.
         """
         # Verify required attributes
         if name is None:
-            raise TypeError("name is required.")
+            raise ValueError("name is required.")
 
         if uni_a is None:
-            raise TypeError("uni_a is required")
+            raise ValueError("uni_a is required")
 
         if uni_z is None:
-            raise TypeError('uni_z is required')
+            raise ValueError('uni_z is required')
 
         # Verify UNIs instances
         if not isinstance(uni_a, UNI):
-            raise TypeError("Invalid uni_a.")
+            raise ValueError("Invalid uni_a.")
 
         if not isinstance(uni_z, UNI):
-            raise TypeError("Invalid uni_z.")
+            raise ValueError("Invalid uni_z.")
 
         # Verify if UNIs is valid
         if not uni_a.is_valid():
-            raise TypeError("Invalid uni_a.")
+            raise ValueError("Invalid uni_a.")
 
         if not uni_z.is_valid():
-            raise TypeError("Invalid uni_z.")
+            raise ValueError("Invalid uni_z.")
 
     def as_dict(self):
         """A dictionary representing an EVC object."""

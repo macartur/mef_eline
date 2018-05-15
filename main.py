@@ -202,7 +202,7 @@ class Main(KytosNApp):
         try:
             circuit = EVC(name, uni_a, uni_z, start_date=start_date,
                           end_date=end_date, creation_time=creation_time)
-        except TypeError as exception:
+        except ValueError as exception:
             return jsonify("Bad request: {}".format(exception)), 400
 
         # Request paths to Pathfinder
