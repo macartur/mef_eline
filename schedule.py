@@ -21,10 +21,10 @@ class Schedule:
         """Add a new circuit deploy event."""
         seconds = (circuit.creation_time - now()).total_seconds()
 
-        if not circuit.enabled:
+        if not circuit.is_enabled():
             log.debug(f'{circuit} is not enabled')
-        if not circuit.active:
+        if not circuit.is_active():
             log.debug(f'{circuit} is not active')
-        if circuit.enabled and not circuit.active:
+        if circuit.is_enabled() and not circuit.is_active():
             self.scheduler.enter(seconds, circuit.priority, circuit.deploy)
             log.debug(f'{circuit} scheduled to be activated.')

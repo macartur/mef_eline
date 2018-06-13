@@ -6,10 +6,11 @@ from datetime import datetime
 from kytos.core import log
 from kytos.core.helpers import now, get_time
 from kytos.core.interface import UNI
+from kytos.core.common import GenericEntity
 from napps.kytos.mef_eline import settings
 
 
-class EVC:
+class EVC(GenericEntity):
     """Class that represents a E-Line Virtual Connection."""
 
     def __init__(self, **kwargs):
@@ -48,6 +49,7 @@ class EVC:
             ValueError: raised when object attributes are invalid.
         """
         self._validate(**kwargs)
+        super().__init__()
 
         # required attributes
         self._id = kwargs.get('id', uuid4().hex)
@@ -68,9 +70,17 @@ class EVC:
         self.dynamic_backup_path = kwargs.get('dynamic_backup_path', False)
         self.creation_time = get_time(kwargs.get('creation_time')) or  now()
         self.owner = kwargs.get('owner', None)
-        self.active = kwargs.get('active', False)
-        self.enabled = kwargs.get('enabled', False)
         self.priority = kwargs.get('priority', 0)
+
+        if kwargs.get('active', False):
+            self.activate()
+        else:
+            self.deactivate()
+
+        if kwargs.get('enabled', False):
+            self.enable()
+        else:
+            self.disable()
 
         # datetime of user request for a EVC (or datetime when object was
         # created)
@@ -162,8 +172,8 @@ class EVC:
         evc_dict['creation_time'] = time
 
         evc_dict['owner'] = self.owner
-        evc_dict['active'] = self.active
-        evc_dict['enabled'] = self.enabled
+        evc_dict['active'] = self.is_active()
+        evc_dict['enabled'] = self.is_enabled()
         evc_dict['priority'] = self.priority
 
         return evc_dict
