@@ -160,7 +160,7 @@ class Main(KytosNApp):
         self.save_evc(evc)
 
         # Request paths to Pathfinder
-        evc.primary_links = self.get_best_path(evc)
+        evc.primary_links = self.get_best_path(evc) or []
 
         # Schedule the circuit deploy
         self.schedule.circuit_deploy(evc)
