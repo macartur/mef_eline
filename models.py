@@ -62,6 +62,7 @@ class EVC(GenericEntity):
         # optional attributes
         self.start_date = get_time(kwargs.get('start_date')) or now()
         self.end_date = get_time(kwargs.get('end_date')) or None
+        self.deploy_frequency = kwargs.get('deploy_frequency')
 
         self.bandwidth = kwargs.get('bandwidth', 0)
         self.primary_links = kwargs.get('primary_links', [])
@@ -73,6 +74,7 @@ class EVC(GenericEntity):
         self.creation_time = get_time(kwargs.get('creation_time')) or  now()
         self.owner = kwargs.get('owner', None)
         self.priority = kwargs.get('priority', 0)
+        self.circuit_schedule = kwargs.get('circuit_schedule', [])
 
         if kwargs.get('active', False):
             self.activate()
@@ -191,6 +193,7 @@ class EVC(GenericEntity):
         evc_dict['creation_time'] = time
 
         evc_dict['owner'] = self.owner
+        evc_dict['circuit_rules'] = self.circuit_rules
         evc_dict['active'] = self.is_active()
         evc_dict['enabled'] = self.is_enabled()
         evc_dict['priority'] = self.priority
@@ -266,11 +269,26 @@ class EVC(GenericEntity):
         return zip(self.primary_links[:-1],
                    self.primary_links[1:])
 
+    def should_deploy(self):
+        """This method will verify if the circuit should be deployed."""
+        if self.primary_links is None:
+            log.debug("Primary links are empty.")
+            return False
+
+        if not circuit.is_enabled():
+            log.debug(f'{circuit} is disabled.')
+            return False
+
+        if not circuit.is_active():
+            log.debug(f'{circuit} will be deployed.')
+            return True
+
+        return False
+
     def deploy(self):
         """Install the flows for this circuit."""
-        if self.primary_links is None:
-            log.info("Primary links are empty.")
-            return False
+        if not self.should_deploy():
+            return
 
         self._chose_vlans()
 
