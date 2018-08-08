@@ -225,47 +225,6 @@ class EVC(GenericEntity):
         """Return this EVC's ID."""
         return self._id
 
-    @staticmethod
-    def send_flow_mods(switch, flow_mods):
-        """Send a flow_mod list to a specific switch."""
-        endpoint = "%s/flows/%s" % (settings.MANAGER_URL, switch.id)
-
-        data = {"flows": flow_mods}
-        requests.post(endpoint, json=data)
-
-    @staticmethod
-    def prepare_flow_mod(in_interface, out_interface, **kwargs):
-        """Create a flow_mod dictionary with the correct parameters."""
-        default_action = {"action_type": "output",
-                          "port": out_interface.port_number}
-
-        flow_mod = {"match": {"in_port": in_interface.port_number},
-                    "actions": [default_action]}
-
-        if 'in_vlan' in kwargs:
-            flow_mod['match']['dl_vlan'] = kwargs.get('in_vlan')
-
-        if 'out_vlan' in kwargs and 'pop' not in kwargs:
-            new_action = {"action_type": "set_vlan",
-                          "vlan_id": kwargs.get('out_vlan')}
-            flow_mod["actions"].insert(0, new_action)
-
-        if 'pop' in kwargs:
-            new_action = {"action_type": "pop_vlan"}
-            flow_mod["actions"].insert(0, new_action)
-
-        if 'push' in kwargs:
-            new_action = {"action_type": "push_vlan",
-                          "tag_type": "s"}
-            flow_mod["actions"].insert(0, new_action)
-
-        if 'change' in kwargs:
-            new_action = {"action_type": "set_vlan",
-                          "vlan_id": kwargs.get('change')}
-            flow_mod["actions"].insert(0, new_action)
-
-        return flow_mod
-
     def _chose_vlans(self):
         """Chose the VLANs to be used for the circuit."""
         for link in self.primary_links:
@@ -300,25 +259,32 @@ class EVC(GenericEntity):
             return
 
         self._chose_vlans()
+        self.install_nni_flows()
+        self.install_uni_flows()
+        self.activate()
+        log.info(f"{self} was deployed.")
 
-        # Install NNI flows
+    def install_nni_flows(self):
+        """Install NNI flows."""
         for incoming, outcoming in self.primary_links_zipped():
             in_vlan = incoming.get_metadata('s_vlan').value
             out_vlan = outcoming.get_metadata('s_vlan').value
 
             flows = []
             # Flow for one direction
-            flows.append(self.prepare_flow_mod(incoming.endpoint_b,
+            flows.append(self.prepare_nni_flow(incoming.endpoint_b,
                                                outcoming.endpoint_a,
                                                in_vlan, out_vlan))
 
             # Flow for the other direction
-            flows.append(self.prepare_flow_mod(outcoming.endpoint_a,
+            flows.append(self.prepare_nni_flow(outcoming.endpoint_a,
                                                incoming.endpoint_b,
                                                out_vlan, in_vlan))
 
             self.send_flow_mods(incoming.endpoint_b.switch, flows)
 
+    def install_uni_flows(self):
+        """Install UNI flows."""
         # Install UNI flows
         # Determine VLANs
         in_vlan_a = self.uni_a.user_tag.value if self.uni_a.user_tag else None
@@ -331,15 +297,15 @@ class EVC(GenericEntity):
         flows_a = []
 
         # Flow for one direction, pushing the service tag
-        flows_a.append(self.prepare_flow_mod(self.uni_a.interface,
-                                             self.primary_links[0].endpoint_a,
-                                             in_vlan_a, out_vlan_a, True,
-                                             change=in_vlan_z))
+        push_flow = self.prepare_push_flow(self.uni_a.interface,
+                                           self.primary_links[0].endpoint_a,
+                                           in_vlan_a, out_vlan_a, in_vlan_z)
+        flows_a.append(push_flow)
 
         # Flow for the other direction, popping the service tag
-        flows_a.append(self.prepare_flow_mod(self.primary_links[0].endpoint_a,
-                                             self.uni_a.interface,
-                                             out_vlan_a, in_vlan_a, pop=True))
+        pop_flow = self.prepare_pop_flow(self.primary_links[0].endpoint_a,
+                                         self.uni_a.interface, out_vlan_a)
+        flows_a.append(pop_flow)
 
         self.send_flow_mods(self.uni_a.interface.switch, flows_a)
 
@@ -347,17 +313,72 @@ class EVC(GenericEntity):
         flows_z = []
 
         # Flow for one direction, pushing the service tag
-        flows_z.append(self.prepare_flow_mod(self.uni_z.interface,
-                                             self.primary_links[-1].endpoint_b,
-                                             in_vlan_z, out_vlan_z, True,
-                                             change=in_vlan_a))
+        push_flow = self.prepare_push_flow(self.uni_z.interface,
+                                           self.primary_links[-1].endpoint_b,
+                                           in_vlan_z, out_vlan_z, in_vlan_a)
+        flows_z.append(push_flow)
 
         # Flow for the other direction, popping the service tag
-        flows_z.append(self.prepare_flow_mod(self.primary_links[-1].endpoint_b,
-                                             self.uni_z.interface,
-                                             out_vlan_z, in_vlan_z, pop=True))
+        pop_flow = self.prepare_pop_flow(self.primary_links[-1].endpoint_b,
+                                         self.uni_z.interface, out_vlan_z)
+        flows_z.append(pop_flow)
 
         self.send_flow_mods(self.uni_z.interface.switch, flows_z)
 
-        self.activate()
-        log.info(f"{self} was deployed.")
+    @staticmethod
+    def send_flow_mods(switch, flow_mods):
+        """Send a flow_mod list to a specific switch."""
+        endpoint = "%s/flows/%s" % (settings.MANAGER_URL, switch.id)
+
+        data = {"flows": flow_mods}
+        requests.post(endpoint, json=data)
+
+    @staticmethod
+    def prepare_flow_mod(in_interface, out_interface):
+        """Prepare a common flow mod."""
+        default_action = {"action_type": "output",
+                          "port": out_interface.port_number}
+
+        flow_mod = {"match": {"in_port": in_interface.port_number},
+                    "actions": [default_action]}
+
+        return flow_mod
+
+    def prepare_nni_flow(self, in_interface, out_interface, in_vlan, out_vlan):
+        """Create NNI flows."""
+        flow_mod = self.prepare_flow_mod(in_interface, out_interface)
+        flow_mod['match']['dl_vlan'] = in_vlan
+
+        new_action = {"action_type": "set_vlan",
+                      "vlan_id": out_vlan}
+        flow_mod["actions"].insert(0, new_action)
+
+        return flow_mod
+
+    def prepare_push_flow(self, in_interface, out_interface, in_vlan, out_vlan,
+                          new_in_vlan):
+        """Prepare push flow."""
+        flow_mod = self.prepare_flow_mod(in_interface, out_interface)
+        flow_mod['match']['dl_vlan'] = in_vlan
+
+        new_action = {"action_type": "set_vlan",
+                      "vlan_id": out_vlan}
+        flow_mod["actions"].insert(0, new_action)
+
+        new_action = {"action_type": "push_vlan",
+                      "tag_type": "s"}
+        flow_mod["actions"].insert(0, new_action)
+
+        new_action = {"action_type": "set_vlan",
+                      "vlan_id": new_in_vlan}
+        flow_mod["actions"].insert(0, new_action)
+
+        return flow_mod
+
+    def prepare_pop_flow(self, in_interface, out_interface, in_vlan):
+        """Prepare pop flow."""
+        flow_mod = self.prepare_flow_mod(in_interface, out_interface)
+        flow_mod['match']['dl_vlan'] = in_vlan
+        new_action = {"action_type": "pop_vlan"}
+        flow_mod["actions"].insert(0, new_action)
+        return flow_mod
