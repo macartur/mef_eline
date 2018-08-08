@@ -2,8 +2,6 @@
 
 NApp to provision circuits from user request.
 """
-import time
-
 import requests
 from flask import jsonify, request
 
@@ -14,7 +12,7 @@ from kytos.core.interface import TAG, UNI
 from kytos.core.link import Link
 from napps.kytos.mef_eline import settings
 from napps.kytos.mef_eline.models import EVC
-from napps.kytos.mef_eline.scheduler import Scheduler, CircuitSchedule
+from napps.kytos.mef_eline.scheduler import CircuitSchedule, Scheduler
 
 
 class Main(KytosNApp):
@@ -37,17 +35,11 @@ class Main(KytosNApp):
         self.list_stored_boxes()
 
     def execute(self):
-        """This method is executed right after the setup method execution.
-
-        You can also use this method in loop mode if you add to the above setup
-        method a line like the following example:
-
-            self.execute_as_loop(30)  # 30-second interval.
-        """
+        """Execute once when the napp is running."""
         pass
 
     def shutdown(self):
-        """This method is executed when your napp is unloaded.
+        """Execute when your napp is unloaded.
 
         If you have some cleanup procedure, insert it here.
         """
@@ -65,7 +57,8 @@ class Main(KytosNApp):
         request_data = {"source": circuit.uni_a.interface.id,
                         "destination": circuit.uni_z.interface.id}
         api_reply = requests.post(endpoint, json=request_data)
-        if api_reply.status_code != requests.codes.ok:
+
+        if api_reply.status_code != getattr(requests.codes, 'ok'):
             log.error("Failed to get paths at %s. Returned %s",
                       endpoint, api_reply.status_code)
             return None
@@ -204,11 +197,12 @@ class Main(KytosNApp):
 
         Returns:
             boolean: True if the circuit is duplicated, otherwise False.
+
         """
         for circuit_dict in self.box.data.values():
             try:
                 circuit = self.evc_from_dict(circuit_dict)
-            except ValueError as exception:
+            except ValueError:
                 continue
 
             if circuit == evc:
@@ -226,8 +220,8 @@ class Main(KytosNApp):
         self.controller.buffers.app.put(event)
         log.info('Create box from storehouse.')
 
-    def _create_box_callback(self, event, data, error):
-        """Callback to handle create_box."""
+    def _create_box_callback(self, _event, data, error):
+        """Execute the callback to handle create_box."""
         if error:
             log.error(f'Can\'t create box with namespace {self.namespace}')
 
@@ -244,15 +238,15 @@ class Main(KytosNApp):
         self.controller.buffers.app.put(event)
         log.info(f'Bootstraping storehouse box for {self.namespace}.')
 
-    def _get_or_create_a_box_from_list_of_boxes(self, event, data, error):
+    def _get_or_create_a_box_from_list_of_boxes(self, _event, data, _error):
         """Create a new box or retrieve the stored box."""
-        if len(data) == 0:
-            self.create_box()
-        else:
+        if data:
             self.get_stored_box(data[0])
+        else:
+            self.create_box()
 
     def get_stored_box(self, box_id):
-        """Get box from storehouse"""
+        """Get box from storehouse."""
         content = {'namespace': self.namespace,
                    'callback': self._get_box_callback,
                    'box_id': box_id,
@@ -262,10 +256,10 @@ class Main(KytosNApp):
         self.controller.buffers.app.put(event)
         log.info(f'Retrieve box with {box_id} from {self.namespace}.')
 
-    def _get_box_callback(self, event, data, error):
+    def _get_box_callback(self, _event, data, error):
         """Handle get_box method saving the box or logging with the error."""
         if error:
-            log.error(f'Box {data.box_id} not found in {data.namespace}.')
+            log.error(f'Box {data.box_id} not found in {self.namespace}.')
 
         self.box = data
         log.info(f'Box {self.box.box_id} was load from storehouse.')
@@ -282,15 +276,15 @@ class Main(KytosNApp):
         event = KytosEvent(name='kytos.storehouse.update', content=content)
         self.controller.buffers.app.put(event)
 
-    def _save_evc_callback(self, event, data, error):
-        """Callback to handle save EVC."""
+    def _save_evc_callback(self, _event, data, error):
+        """Display the save EVC result in the log."""
         if error:
             log.error(f'Can\'t update the {self.box.box_id}')
 
         log.info(f'Box {data.box_id} was updated.')
 
     @listen_to('kytos/topology.updated')
-    def trigger_evc_reprovisioning(self, event):
+    def trigger_evc_reprovisioning(self, *_):
         """Listen to topology update to trigger EVCs (re)provisioning.
 
         Schedule all Circuits with valid UNIs.
@@ -300,7 +294,7 @@ class Main(KytosNApp):
             try:
                 evc = self.evc_from_dict(data)
                 self.sched.add(evc)
-            except ValueError as exception:
+            except ValueError as _exception:
                 log.debug(f'{data.get("id")} can not be provisioning yet.')
 
     def evc_from_dict(self, evc_dict):
@@ -315,15 +309,15 @@ class Main(KytosNApp):
             if 'uni' in attribute:
                 data[attribute] = self.uni_from_dict(value)
 
-            if 'circuit_schedule' == attribute:
+            if attribute == 'circuit_schedule':
                 data[attribute] = []
                 for schedule in value:
                     data[attribute].append(CircuitSchedule.from_dict(schedule))
 
             if ('path' in attribute or 'link' in attribute) and \
-               ('dynamic_backup_path' != attribute):
-                if len(value) != 0:
-                    data[attribute] = link_from_dict(value)
+               (attribute != 'dynamic_backup_path'):
+                if value:
+                    data[attribute] = self.link_from_dict(value)
 
         return EVC(**data)
 
