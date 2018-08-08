@@ -1,12 +1,13 @@
 """Classes used in the main application."""
+from datetime import datetime
 from uuid import uuid4
 
 import requests
-from datetime import datetime
+
 from kytos.core import log
-from kytos.core.helpers import now, get_time
-from kytos.core.interface import UNI
 from kytos.core.common import GenericEntity
+from kytos.core.helpers import get_time, now
+from kytos.core.interface import UNI
 from napps.kytos.mef_eline import settings
 
 
@@ -49,6 +50,7 @@ class EVC(GenericEntity):
 
         Raises:
             ValueError: raised when object attributes are invalid.
+
         """
         self._validate(**kwargs)
         super().__init__()
@@ -62,16 +64,15 @@ class EVC(GenericEntity):
         # optional attributes
         self.start_date = get_time(kwargs.get('start_date')) or now()
         self.end_date = get_time(kwargs.get('end_date')) or None
-        self.deploy_frequency = kwargs.get('deploy_frequency')
 
         self.bandwidth = kwargs.get('bandwidth', 0)
         self.primary_links = kwargs.get('primary_links', [])
-        self.backup_links =  kwargs.get('backup_links', [])
+        self.backup_links = kwargs.get('backup_links', [])
         self.current_path = kwargs.get('current_path', [])
         self.primary_path = kwargs.get('primary_path', [])
         self.backup_path = kwargs.get('backup_path', [])
         self.dynamic_backup_path = kwargs.get('dynamic_backup_path', False)
-        self.creation_time = get_time(kwargs.get('creation_time')) or  now()
+        self.creation_time = get_time(kwargs.get('creation_time')) or now()
         self.owner = kwargs.get('owner', None)
         self.priority = kwargs.get('priority', 0)
         self.circuit_schedule = kwargs.get('circuit_schedule', [])
@@ -92,7 +93,7 @@ class EVC(GenericEntity):
         # dict with the user original request (input)
         self._requested = kwargs
 
-    def update(self, *args, **kwargs):
+    def update(self, **kwargs):
         """Update evc attributes.
 
         This method will raises an error trying to change the following
@@ -124,7 +125,6 @@ class EVC(GenericEntity):
             ValueError: message with error detail.
 
         """
-
         for attribute in self.unique_attributes:
 
             if attribute not in kwargs:
@@ -153,7 +153,7 @@ class EVC(GenericEntity):
         return True
 
     def as_dict(self):
-        """A dictionary representing an EVC object."""
+        """Return a dictionary representing an EVC object."""
         evc_dict = {"id": self.id, "name": self.name,
                     "uni_a": self.uni_a.as_dict(),
                     "uni_z": self.uni_z.as_dict()}
@@ -193,7 +193,7 @@ class EVC(GenericEntity):
         evc_dict['creation_time'] = time
 
         evc_dict['owner'] = self.owner
-        evc_dict['circuit_rules'] = self.circuit_rules
+        evc_dict['circuit_schedule'] = self.circuit_schedule
         evc_dict['active'] = self.is_active()
         evc_dict['enabled'] = self.is_enabled()
         evc_dict['priority'] = self.priority
@@ -201,19 +201,23 @@ class EVC(GenericEntity):
         return evc_dict
 
     def create(self):
+        """Create a EVC."""
         pass
 
     def discover_new_path(self):
+        """Discover a new path for EVC."""
         pass
 
     def change_path(self, path):
+        """Change EVC path."""
         pass
 
     def reprovision(self):
-        """Force the EVC (re-)provisioning"""
+        """Force the EVC (re-)provisioning."""
         pass
 
     def remove(self):
+        """Remove EVC path."""
         pass
 
     @property
@@ -230,31 +234,36 @@ class EVC(GenericEntity):
         requests.post(endpoint, json=data)
 
     @staticmethod
-    def prepare_flow_mod(in_interface, out_interface, in_vlan=None,
-                         out_vlan=None, push=False, pop=False, change=False):
+    def prepare_flow_mod(in_interface, out_interface, **kwargs):
         """Create a flow_mod dictionary with the correct parameters."""
         default_action = {"action_type": "output",
                           "port": out_interface.port_number}
 
         flow_mod = {"match": {"in_port": in_interface.port_number},
                     "actions": [default_action]}
-        if in_vlan:
-            flow_mod['match']['dl_vlan'] = in_vlan
-        if out_vlan and not pop:
+
+        if 'in_vlan' in kwargs:
+            flow_mod['match']['dl_vlan'] = kwargs.get('in_vlan')
+
+        if 'out_vlan' in kwargs and 'pop' not in kwargs:
             new_action = {"action_type": "set_vlan",
-                          "vlan_id": out_vlan}
+                          "vlan_id": kwargs.get('out_vlan')}
             flow_mod["actions"].insert(0, new_action)
-        if pop:
+
+        if 'pop' in kwargs:
             new_action = {"action_type": "pop_vlan"}
             flow_mod["actions"].insert(0, new_action)
-        if push:
+
+        if 'push' in kwargs:
             new_action = {"action_type": "push_vlan",
                           "tag_type": "s"}
             flow_mod["actions"].insert(0, new_action)
-        if change:
+
+        if 'change' in kwargs:
             new_action = {"action_type": "set_vlan",
-                          "vlan_id": change}
+                          "vlan_id": kwargs.get('change')}
             flow_mod["actions"].insert(0, new_action)
+
         return flow_mod
 
     def _chose_vlans(self):
@@ -270,17 +279,17 @@ class EVC(GenericEntity):
                    self.primary_links[1:])
 
     def should_deploy(self):
-        """This method will verify if the circuit should be deployed."""
+        """Verify if the circuit should be deployed."""
         if self.primary_links is None:
             log.debug("Primary links are empty.")
             return False
 
-        if not circuit.is_enabled():
-            log.debug(f'{circuit} is disabled.')
+        if not self.is_enabled():
+            log.debug(f'{self} is disabled.')
             return False
 
-        if not circuit.is_active():
-            log.debug(f'{circuit} will be deployed.')
+        if not self.is_active():
+            log.debug(f'{self} will be deployed.')
             return True
 
         return False
