@@ -163,7 +163,6 @@ class DevelopMode(develop):
         dst = ENABL_PATH / Path('kytos', 'mef_eline')
         dst.symlink_to(src)
 
-
     @staticmethod
     def _create_file_symlinks():
         """Symlink to required files."""
@@ -172,7 +171,7 @@ class DevelopMode(develop):
         src.symlink_to(dst)
 
 
-requirements = [i.strip() for i in open("requirements.txt").readlines()]
+REQUIREMENTS = [i.strip() for i in open("requirements.txt").readlines()]
 
 setup(name='kytos/mef_eline',
       version='2.2.0',
@@ -181,7 +180,7 @@ setup(name='kytos/mef_eline',
       author='Kytos Team',
       author_email='of-ng-dev@ncc.unesp.br',
       license='MIT',
-      install_requires=requirements,
+      install_requires=REQUIREMENTS,
       cmdclass={
           'clean': Cleaner,
           'ci': CITest,
