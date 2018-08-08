@@ -1,24 +1,20 @@
 """Module responsible to handle schedules."""
-import time
-from pytz import utc
-
 from uuid import uuid4
-from apscheduler.schedulers.background import BackgroundScheduler
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from kytos.core.helpers import now
-from kytos.core import log
+from pytz import utc
 
 
 class CircuitSchedule:
     """Schedule events."""
 
     def __init__(self, **kwargs):
-        """CircuitSchedule contructor."""
+        """Create a CircuitSchedule object."""
         self._id = kwargs.get('id', uuid4().hex)
-        self.date  = kwargs.get('date', None)
+        self.date = kwargs.get('date', None)
         self.interval = kwargs.get('interval', None)
-        self.frequency  = kwargs.get('frequency', None)
+        self.frequency = kwargs.get('frequency', None)
         self.action = kwargs.get('action', 'create')
 
     @property
@@ -27,7 +23,7 @@ class CircuitSchedule:
         return self._id
 
     def as_dict(self):
-        """A dictionary representing an circuit schedule object."""
+        """Return a dictionary representing an circuit schedule object."""
         circuit_schedule_dict = {'id': self.id, 'action': self.action}
 
         if self.date:
@@ -44,17 +40,18 @@ class CircuitSchedule:
         """Return a CircuitSchedule object from dict."""
         return cls(**data)
 
+
 class Scheduler:
     """Class to schedule the circuits rules."""
 
     def __init__(self):
-        """Initialize the schedule structure."""
+        """Create a new schedule structure."""
         self.scheduler = BackgroundScheduler(timezone=utc)
         self.scheduler.start()
 
     def shutdown(self):
         """Shutdown the scheduler."""
-        self.scheduler.shutdoown(wait=False)
+        self.scheduler.shutdown(wait=False)
 
     def add(self, circuit):
         """Add all circuit_schedule from specific circuit."""
@@ -80,7 +77,6 @@ class Scheduler:
             if circuit_schedule.frequency:
                 cron = CronTrigger.from_crontab(circuit_schedule.frequency)
                 self.scheduler.add_job(action, cron, **data)
-
 
     def cancel_job(self, circuit_schedule_id):
         """Cancel a specific job from scheduler."""
