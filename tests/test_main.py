@@ -1,12 +1,12 @@
-"""Module to test the main.py"""
+"""Module to test the main napp file."""
 from unittest import TestCase
-from unittest.mock import Mock, patch
 
-from tests.helper import (get_controller_mock, get_napp_urls,
-                          get_event_listeners, get_app_test_client)
+from tests.helper import (get_app_test_client, get_event_listeners,
+                          get_napp_urls)
 
 
 class TestMain(TestCase):
+    """Test the Main class."""
 
     def setUp(self):
         """Execute steps before each tests.
@@ -24,16 +24,21 @@ class TestMain(TestCase):
         self.assertEqual(expected_events, actual_events)
 
     def test_verify_api_urls(self):
-       """Verify all APIs registered."""
-       expected_urls = [
-           ({}, {'OPTIONS', 'POST'}, '/api/kytos/mef_eline/v2/evc/'),
-           ({}, {'OPTIONS', 'HEAD', 'GET'}, '/api/kytos/mef_eline/v2/evc/'),
-           ({'circuit_id': '[circuit_id]'}, {'OPTIONS', 'HEAD', 'GET'}, '/api/kytos/mef_eline/v2/evc/<circuit_id>'),
-           ({'circuit_id': '[circuit_id]'}, {'OPTIONS', 'PATCH'}, '/api/kytos/mef_eline/v2/evc/<circuit_id>')]
-       urls = get_napp_urls()
-       self.assertEqual(expected_urls, urls)
+        """Verify all APIs registered."""
+        expected_urls = [
+            ({}, {'OPTIONS', 'POST'},
+             '/api/kytos/mef_eline/v2/evc/'),
+            ({}, {'OPTIONS', 'HEAD', 'GET'},
+             '/api/kytos/mef_eline/v2/evc/'),
+            ({'circuit_id': '[circuit_id]'}, {'OPTIONS', 'HEAD', 'GET'},
+             '/api/kytos/mef_eline/v2/evc/<circuit_id>'),
+            ({'circuit_id': '[circuit_id]'}, {'OPTIONS', 'PATCH'},
+             '/api/kytos/mef_eline/v2/evc/<circuit_id>')]
+        urls = get_napp_urls()
+        self.assertEqual(expected_urls, urls)
 
     def test_list_circuits(self):
+        """Test if list_circuits return all circuits registered."""
         api = get_app_test_client()
         url = f'{self.server_name_url}/v2/evc/'
         result = api.get(url)

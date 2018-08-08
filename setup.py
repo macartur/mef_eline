@@ -86,8 +86,8 @@ class Linter(SimpleCommand):
 
     def run(self):
         """Run yala."""
-        print('Pylama is running. It may take several seconds...')
-        check_call('pylama *.py', shell=True)
+        print('Yala is running. It may take several seconds...')
+        check_call('yala *.py tests/test_*.py', shell=True)
 
 
 class CITest(SimpleCommand):

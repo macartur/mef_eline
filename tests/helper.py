@@ -1,17 +1,16 @@
 """Module to help create tests."""
-import os
 import sys
 from unittest.mock import Mock
-
-# import the napps path
-sys.path.insert(0,'/var/lib/kytos/napps/..')
 
 # import the controller
 from kytos.core import Controller
 from kytos.core.config import KytosConfig
+# import the napps path
+sys.path.insert(0, '/var/lib/kytos/napps/..')
 
-#import NAppMain
+# import NAppMain
 from napps.kytos.mef_eline.main import Main
+
 
 def get_controller_mock():
     """Return a controller mock."""
@@ -42,13 +41,13 @@ def get_napp_urls(username='kytos', napp_name='mef_eline'):
             options[arg] = "[{0}]".format(arg)
 
         if f'{username}/{napp_name}' in str(rule):
-            urls.append((options, rule.methods ,f'{str(rule)}'))
+            urls.append((options, rule.methods, f'{str(rule)}'))
 
     return urls
 
 
 def get_app_test_client():
-    """Return the app test client"""
+    """Return a flask api test client."""
     controller = get_controller_mock()
     napp = Main(controller)
     controller.api_server.register_napp_endpoints(napp)
@@ -61,6 +60,7 @@ def get_event_listeners():
 
     Returns:
         list: list with all events listeners registered.
+
     """
     controller = get_controller_mock()
     napp = Main(controller)
