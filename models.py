@@ -75,7 +75,7 @@ class EVC(GenericEntity):
         self.creation_time = get_time(kwargs.get('creation_time')) or now()
         self.owner = kwargs.get('owner', None)
         self.priority = kwargs.get('priority', 0)
-        self.circuit_schedule = kwargs.get('circuit_schedule', [])
+        self.circuit_scheduler = kwargs.get('circuit_scheduler', [])
 
         if kwargs.get('active', False):
             self.activate()
@@ -132,7 +132,6 @@ class EVC(GenericEntity):
 
             if 'uni' in attribute:
                 uni = kwargs.get(attribute)
-
                 if not isinstance(uni, UNI):
                     raise ValueError(f'{attribute} is an invalid UNI.')
 
@@ -193,7 +192,7 @@ class EVC(GenericEntity):
         evc_dict['creation_time'] = time
 
         evc_dict['owner'] = self.owner
-        evc_dict['circuit_schedule'] = self.circuit_schedule
+        evc_dict['circuit_scheduler'] = self.circuit_scheduler
         evc_dict['active'] = self.is_active()
         evc_dict['enabled'] = self.is_enabled()
         evc_dict['priority'] = self.priority
