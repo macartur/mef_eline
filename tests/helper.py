@@ -8,9 +8,6 @@ from kytos.core.config import KytosConfig
 # import the napps path
 sys.path.insert(0, '/var/lib/kytos/napps/..')
 
-# import NAppMain
-from napps.kytos.mef_eline.main import Main
-
 
 def get_controller_mock():
     """Return a controller mock."""
@@ -19,8 +16,7 @@ def get_controller_mock():
     controller.log = Mock()
     return controller
 
-
-def get_napp_urls(username='kytos', napp_name='mef_eline'):
+def get_napp_urls(napp):
     """Return the kytos/mef_eline urls.
 
     The urls will be like:
@@ -30,38 +26,32 @@ def get_napp_urls(username='kytos', napp_name='mef_eline'):
     ]
 
     """
-    controller = get_controller_mock()
-    napp = Main(controller)
-
+    controller = napp.controller
     controller.api_server.register_napp_endpoints(napp)
+
     urls = []
     for rule in controller.api_server.app.url_map.iter_rules():
         options = {}
         for arg in rule.arguments:
             options[arg] = "[{0}]".format(arg)
 
-        if f'{username}/{napp_name}' in str(rule):
+        if f'{napp.username}/{napp.name}' in str(rule):
             urls.append((options, rule.methods, f'{str(rule)}'))
 
     return urls
 
 
-def get_app_test_client():
+def get_app_test_client(napp):
     """Return a flask api test client."""
-    controller = get_controller_mock()
-    napp = Main(controller)
-    controller.api_server.register_napp_endpoints(napp)
-    app = controller.api_server.app.test_client()
-    return app
+    napp.controller.api_server.register_napp_endpoints(napp)
+    return napp.controller.api_server.app.test_client()
 
 
-def get_event_listeners():
+def get_event_listeners(napp):
     """Return the event listeners name.
 
     Returns:
         list: list with all events listeners registered.
 
     """
-    controller = get_controller_mock()
-    napp = Main(controller)
     return napp.listeners()
