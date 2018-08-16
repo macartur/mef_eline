@@ -184,8 +184,34 @@ class EVC(GenericEntity):
     def create(self):
         pass
 
-#    def discover_new_path(self):
-#        pass
+    def discover_new_path(self):
+
+    def _get_paths(self):
+        """Get a valid path for the circuit from the Pathfinder."""
+        endpoint = settings.PATHFINDER_URL
+        request_data = {"source": self.uni_a.interface.id,
+                        "destination": self.uni_z.interface.id}
+        api_reply = requests.post(endpoint, json=request_data)
+        if api_reply.status_code != requests.codes.ok:
+            log.error("Failed to get paths at %s. Returned %s",
+                      endpoint, api_reply.status_code)
+            return None
+
+        reply_data = api_reply.json()
+        return reply_data.get('paths')
+
+    def _get_best_path(self):
+        """Return the best path available for a circuit, if exists."""
+        paths = self._get_paths()
+        if paths:
+            return self.create_path(paths[0]['hops'])
+
+    @staticmethod
+    def _clear_path(path):
+        """Remove switches from a path, returning only interfaeces."""
+        return [endpoint for endpoint in path if len(endpoint) > 23]
+
+    TODO: continuar aqui......
 
 #    def change_path(self, path):
 #        pass
@@ -225,8 +251,8 @@ class EVC(GenericEntity):
     @listen('kytos.*.link.down')
     @listen('kytos.*.link.under_maintenance')
     def handle_link_down(self, event):
-        if not self.is_affected_by_link(event.link):
-            return
+        if not self.is_enabled() or not self.is_affected_by_link(event.link):
+            return False
 
         success = False
         if self.is_using_primary_path():
@@ -236,16 +262,21 @@ class EVC(GenericEntity):
 
         if success:
             # TODO: LOG/EVENT: Circuit deployed after link down
-            return
+            return success
 
         if self.dynamic_backup_path:
             success = self.deploy()
             # TODO: LOG/EVENT: failed to re-deploy circuit after link down
+            return success
 
     @listen('kytos.*.link.up')
     @listen('kytos.*.link.end_maintenance')
     def handle_link_up(self, event):
-        if self.is_using_primary_path():
+        if not self.is_enabled():
+            return True
+
+        if self.is_using_primary_path() and \
+           self.get_path_status(self.primary_path) == EntityStatus.UP:
             return True
 
         success = False
@@ -312,7 +343,6 @@ class EVC(GenericEntity):
         If everything fails and dynamic_backup_path is True, then tries to
         deploy a dynamic path.
         """
-        # TODO: Remove flows from current (cookies)
         if self.is_using_backup_path:
             # TODO: Log to say that cannot move backup to backup
             return True
@@ -335,8 +365,7 @@ class EVC(GenericEntity):
         If the primary_path attribute is valid and up, this method will try to
         deploy this primary_path.
         """
-        # TODO: Remove flows from current (cookies)
-        if self.is_using_primary_path:
+        if self.is_using_primary_path():
             # TODO: Log to say that cannot move primary to primary
             return False
 
@@ -357,12 +386,19 @@ class EVC(GenericEntity):
                 return link.status
         return EntityStatus.UP
 
-#    def discover_new_path(self):
-#        # TODO: discover a new path to satisfy this circuit and deploy
-#        pass
-
     def remove_current_flows(self):
-        pass
+        """Remove all flows from current path."""
+        switches = set()
+
+        for link from self.current_path:
+            switches.add(link.endpoint_a.switch)
+            switches.add(link.endpoint_b.switch)
+
+        flows = [{'cookie': self.get_cookie()}]
+        for switch in switches:
+            self.send_flow_mods(switch, flows, 'delete')
+
+        self.deactivate()
 
     def remove(self):
         pass
@@ -373,12 +409,16 @@ class EVC(GenericEntity):
         return self._id
 
     @staticmethod
-    def send_flow_mods(switch, flow_mods):
+    def send_flow_mods(switch, flow_mods, command='flows'):
         """Send a flow_mod list to a specific switch."""
-        endpoint = "%s/flows/%s" % (settings.MANAGER_URL, switch.id)
-
+        endpoint = "%s/%s/%s" % (settings.MANAGER_URL, command,switch.id)
         data = {"flows": flow_mods}
         requests.post(endpoint, json=data)
+
+    def get_cookie(self):
+        """Return the cookie integer from evc id."""
+        value = self.id[len(self.id)//2:]
+        return int(value, 16)
 
     @staticmethod
     def prepare_flow_mod(in_interface, out_interface, in_vlan=None,
@@ -388,6 +428,7 @@ class EVC(GenericEntity):
                           "port": out_interface.port_number}
 
         flow_mod = {"match": {"in_port": in_interface.port_number},
+                    "cookie": self.get_cookie(),
                     "actions": [default_action]}
         if in_vlan:
             flow_mod['match']['dl_vlan'] = in_vlan
@@ -424,7 +465,7 @@ class EVC(GenericEntity):
         """Install the flows for this circuit."""
         # TODO: Refact this in case path is None
         #
-        # 0. Check if circuit is enabled
+        # 0. Remove current flows installed
         # 1. Decide if will deploy "path" or discover a new path
         # 2. Choose vlans
         # 3. Install NNI flows
@@ -433,8 +474,10 @@ class EVC(GenericEntity):
         # 6. Update current_path
         # 7. Update links caches (primary, current, backup)
 
-        if self.primary_links is None:
-            log.info("Primary links are empty.")
+        self.remove_current_flows()
+
+        if path is None:
+            path = self.discover_new_path()
             return False
 
         self._chose_vlans()
