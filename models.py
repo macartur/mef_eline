@@ -354,9 +354,23 @@ class EVC(GenericEntity):
 
         return flow_mod
 
-    def prepare_push_flow(self, in_interface, out_interface, in_vlan, out_vlan,
-                          new_in_vlan):
-        """Prepare push flow."""
+    def prepare_push_flow(self, *args):
+        """Prepare push flow.
+
+        Arguments:
+            in_interface(str): Interface input.
+            out_interface(str): Interface output.
+            in_vlan(str): Vlan input.
+            out_vlan(str): Vlan output.
+            new_in_vlan(str): Interface input.
+
+        Return:
+            dict: An python dictionary representing a FlowMod
+
+        """
+        # assign all arguments
+        in_interface, out_interface, in_vlan, out_vlan, new_in_vlan = args
+
         flow_mod = self.prepare_flow_mod(in_interface, out_interface)
         flow_mod['match']['dl_vlan'] = in_vlan
 

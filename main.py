@@ -13,6 +13,7 @@ from kytos.core.link import Link
 from napps.kytos.mef_eline import settings
 from napps.kytos.mef_eline.models import EVC
 from napps.kytos.mef_eline.scheduler import CircuitSchedule, Scheduler
+from napps.kytos.mef_eline.storehouse import StoreHouse
 
 
 class Main(KytosNApp):
@@ -30,9 +31,7 @@ class Main(KytosNApp):
         So, if you have any setup routine, insert it here.
         """
         self.sched = Scheduler()
-        self.namespace = 'kytos.mef_eline.circuits'
-        self.box = None
-        self.list_stored_boxes()
+        self.storehouse = StoreHouse(self.controller)
 
     def execute(self):
         """Execute once when the napp is running."""
@@ -92,15 +91,16 @@ class Main(KytosNApp):
     @rest('/v2/evc/', methods=['GET'])
     def list_circuits(self):
         """Endpoint to return all circuits stored."""
-        if not self.box:
+        circuits = self.storehouse.get_data()
+        if not circuits:
             return jsonify({"response": "No circuit stored."}), 200
 
-        return jsonify(self.box.data), 200
+        return jsonify(circuits), 200
 
     @rest('/v2/evc/<circuit_id>', methods=['GET'])
     def get_circuit(self, circuit_id):
         """Endpoint to return a circuit based on id."""
-        circuits = self.box.data if self.box else {}
+        circuits = self.storehouse.get_data()
 
         if circuit_id in circuits:
             result = circuits[circuit_id]
@@ -149,7 +149,7 @@ class Main(KytosNApp):
             return jsonify("Not Acceptable: This evc already exists."), 409
 
         # save circuit
-        self.save_evc(evc)
+        self.storehouse.save_evc(evc)
 
         # Request paths to Pathfinder
         evc.primary_links = self.get_best_path(evc) or []
@@ -171,7 +171,7 @@ class Main(KytosNApp):
         The EVC required attributes can't be updated.
         """
         data = request.get_json()
-        circuits = self.box.data if self.box else {}
+        circuits = self.storehouse.get_data()
 
         if circuit_id not in circuits:
             result = {'response': f'circuit_id {circuit_id} not found'}
@@ -180,7 +180,7 @@ class Main(KytosNApp):
         try:
             evc = self.evc_from_dict(circuits.get(circuit_id))
             evc.update(**data)
-            self.save_evc(evc)
+            self.storehouse.save_evc(evc)
             result = {evc.id: evc.as_dict()}
             status = 200
         except ValueError as exception:
@@ -199,7 +199,7 @@ class Main(KytosNApp):
             boolean: True if the circuit is duplicated, otherwise False.
 
         """
-        for circuit_dict in self.box.data.values():
+        for circuit_dict in self.storehouse.get_data().values():
             try:
                 circuit = self.evc_from_dict(circuit_dict)
             except ValueError:
@@ -210,86 +210,13 @@ class Main(KytosNApp):
 
         return False
 
-    # METHODS TO HANDLE STOREHOUSE
-    def create_box(self):
-        """Create a new box."""
-        content = {'namespace': self.namespace,
-                   'callback': self._create_box_callback,
-                   'data': {}}
-        event = KytosEvent(name='kytos.storehouse.create', content=content)
-        self.controller.buffers.app.put(event)
-        log.info('Create box from storehouse.')
-
-    def _create_box_callback(self, _event, data, error):
-        """Execute the callback to handle create_box."""
-        if error:
-            log.error(f'Can\'t create box with namespace {self.namespace}')
-
-        self.box = data
-        log.info(f'Box {self.box.box_id} was created in {self.namespace}.')
-
-    def list_stored_boxes(self):
-        """List all boxes using the current namespace."""
-        name = 'kytos.storehouse.list'
-        content = {'namespace': self.namespace,
-                   'callback': self._get_or_create_a_box_from_list_of_boxes}
-
-        event = KytosEvent(name=name, content=content)
-        self.controller.buffers.app.put(event)
-        log.info(f'Bootstraping storehouse box for {self.namespace}.')
-
-    def _get_or_create_a_box_from_list_of_boxes(self, _event, data, _error):
-        """Create a new box or retrieve the stored box."""
-        if data:
-            self.get_stored_box(data[0])
-        else:
-            self.create_box()
-
-    def get_stored_box(self, box_id):
-        """Get box from storehouse."""
-        content = {'namespace': self.namespace,
-                   'callback': self._get_box_callback,
-                   'box_id': box_id,
-                   'data': {}}
-        name = 'kytos.storehouse.retrieve'
-        event = KytosEvent(name=name, content=content)
-        self.controller.buffers.app.put(event)
-        log.info(f'Retrieve box with {box_id} from {self.namespace}.')
-
-    def _get_box_callback(self, _event, data, error):
-        """Handle get_box method saving the box or logging with the error."""
-        if error:
-            log.error(f'Box {data.box_id} not found in {self.namespace}.')
-
-        self.box = data
-        log.info(f'Box {self.box.box_id} was load from storehouse.')
-
-    def save_evc(self, evc):
-        """Save a EVC using the storehouse."""
-        self.box.data[evc.id] = evc.as_dict()
-
-        content = {'namespace': self.namespace,
-                   'box_id': self.box.box_id,
-                   'data': self.box.data,
-                   'callback': self._save_evc_callback}
-
-        event = KytosEvent(name='kytos.storehouse.update', content=content)
-        self.controller.buffers.app.put(event)
-
-    def _save_evc_callback(self, _event, data, error):
-        """Display the save EVC result in the log."""
-        if error:
-            log.error(f'Can\'t update the {self.box.box_id}')
-
-        log.info(f'Box {data.box_id} was updated.')
-
     @listen_to('kytos/topology.updated')
     def trigger_evc_reprovisioning(self, *_):
         """Listen to topology update to trigger EVCs (re)provisioning.
 
         Schedule all Circuits with valid UNIs.
         """
-        stored_data = self.box.data.values() if not self.box else []
+        stored_data = self.storehouse.get_data().values() or []
         for data in stored_data:
             try:
                 evc = self.evc_from_dict(data)
