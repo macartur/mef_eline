@@ -89,7 +89,7 @@ class EVC(GenericEntity):
 
         # datetime of user request for a EVC (or datetime when object was
         # created)
-        self.request_time = now()
+        self.request_time = kwargs.get('request_time', now())
         # dict with the user original request (input)
         self._requested = kwargs
 
@@ -185,8 +185,9 @@ class EVC(GenericEntity):
             request_dict['uni_z'] = request_dict['uni_z'].as_dict()
             evc_dict['_requested'] = request_dict
 
-        time = self.request_time.strftime(time_fmt)
-        evc_dict['request_time'] = time
+        evc_dict["request_time"] = self.request_time
+        if isinstance(self.request_time, datetime):
+            evc_dict["end_date"] = self.request_time.strftime(time_fmt)
 
         time = self.creation_time.strftime(time_fmt)
         evc_dict['creation_time'] = time
