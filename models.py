@@ -239,7 +239,7 @@ class EVC(GenericEntity):
 
     def should_deploy(self):
         """Verify if the circuit should be deployed."""
-        if self.primary_links is None:
+        if not self.primary_links:
             log.debug("Primary links are empty.")
             return False
 
@@ -280,7 +280,6 @@ class EVC(GenericEntity):
             flows.append(self.prepare_nni_flow(outcoming.endpoint_a,
                                                incoming.endpoint_b,
                                                out_vlan, in_vlan))
-
             self.send_flow_mods(incoming.endpoint_b.switch, flows)
 
     def install_uni_flows(self):
