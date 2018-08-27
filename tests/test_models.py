@@ -2,12 +2,92 @@
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
-from kytos.core.interface import TAG, UNI, Interface
+from kytos.core.interface import UNI, Interface
 from kytos.core.switch import Switch
-from kytos.core.link import Link
+from kytos.core.common import EntityStatus
 
-from napps.kytos.mef_eline.models import EVC
+from napps.kytos.mef_eline.models import EVC, Path
 from napps.kytos.mef_eline.settings import MANAGER_URL
+from .helpers import get_link_mocked, get_uni_mocked
+
+
+class TestPath(TestCase):
+    """"Class to test path methods."""
+
+    def test_status_case_1(self):
+        """Test if empty link is DISABLED."""
+        current_path = Path()
+        self.assertEqual(current_path.status, EntityStatus.DISABLED)
+
+    def test_status_case_2(self):
+        """Test if link status is DOWN."""
+        links = [
+                 get_link_mocked(status=EntityStatus.DOWN),
+                 get_link_mocked(status=EntityStatus.UP)
+        ]
+        current_path = Path(links)
+        self.assertEqual(current_path.status, EntityStatus.DOWN)
+
+    def test_status_case_3(self):
+        """Test if link status is DISABLED."""
+        links = [
+                 get_link_mocked(status=EntityStatus.DISABLED),
+                 get_link_mocked(status=EntityStatus.UP)
+        ]
+        current_path = Path(links)
+        self.assertEqual(current_path.status, EntityStatus.DISABLED)
+
+    def test_status_case_4(self):
+        """Test if link status is UP."""
+        links = [
+                 get_link_mocked(status=EntityStatus.UP),
+                 get_link_mocked(status=EntityStatus.UP)
+        ]
+        current_path = Path(links)
+        self.assertEqual(current_path.status, EntityStatus.UP)
+
+    def test_compare_same_paths(self):
+        """Test compare paths with same links."""
+        links = [
+                get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
+                                metadata={"s_vlan": 5}),
+                get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
+                                metadata={"s_vlan": 6})
+            ]
+
+        path_1 = Path(links)
+        path_2 = Path(links)
+        self.assertEqual(path_1, path_2)
+
+    def test_compare_different_paths(self):
+        """Test compare paths with different links."""
+        links_1 = [
+                get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
+                                metadata={"s_vlan": 5}),
+                get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
+                                metadata={"s_vlan": 6})
+            ]
+        links_2 = [
+                get_link_mocked(endpoint_a_port=12, endpoint_b_port=11,
+                                metadata={"s_vlan": 5}),
+                get_link_mocked(endpoint_a_port=14, endpoint_b_port=16,
+                                metadata={"s_vlan": 11})
+            ]
+
+        path_1 = Path(links_1)
+        path_2 = Path(links_2)
+        self.assertNotEqual(path_1, path_2)
+
+    def test_as_dict(self):
+        """Test path as dict."""
+        links = [
+                get_link_mocked(link_dict={"id": 3}),
+                get_link_mocked(link_dict={"id": 2})
+            ]
+
+        current_path = Path(links)
+        expected_dict = [{"id": 3}, {"id": 2}]
+        self.assertEqual(expected_dict, current_path.as_dict())
 
 
 class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
@@ -33,7 +113,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         """Test if the EVC raises and error with invalid UNI A."""
         attributes = {
             "name": "circuit_name",
-            "uni_a": self.get_uni_mocked(tag_value=82)
+            "uni_a": get_uni_mocked(tag_value=82)
         }
         error_message = "VLAN tag 82 is not available in uni_a"
         with self.assertRaises(ValueError) as handle_error:
@@ -44,7 +124,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         """Test if the EVC raises and error with UNI Z is required."""
         attributes = {
             "name": "circuit_name",
-            "uni_a": self.get_uni_mocked(is_valid=True)
+            "uni_a": get_uni_mocked(is_valid=True)
         }
         error_message = "uni_z is required."
         with self.assertRaises(ValueError) as handle_error:
@@ -55,73 +135,20 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         """Test if the EVC raises and error with UNI Z is required."""
         attributes = {
             "name": "circuit_name",
-            "uni_a": self.get_uni_mocked(is_valid=True),
-            "uni_z": self.get_uni_mocked(tag_value=83)
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(tag_value=83)
         }
         error_message = "VLAN tag 83 is not available in uni_z"
         with self.assertRaises(ValueError) as handle_error:
             EVC(**attributes)
         self.assertEqual(str(handle_error.exception), error_message)
 
-    @staticmethod
-    def get_uni_mocked(**kwargs):
-        """Create an uni mocked.
-
-        Args:
-            interface_name(str): Interface name. Defaults to "eth1".
-            interface_port(int): Interface pror. Defaults to 1.
-            tag_type(int): Type of a tag. Defaults to 1.
-            tag_value(int): Value of a tag. Defaults to 81
-            is_valid(bool): Value returned by is_valid method.
-                            Defaults to False.
-        """
-        interface_name = kwargs.get("interface_name", "eth1")
-        interface_port = kwargs.get("interface_port", 1)
-        tag_type = kwargs.get("tag_type", 1)
-        tag_value = kwargs.get("tag_value", 81)
-        is_valid = kwargs.get("is_valid", False)
-        switch = Mock(spec=Switch)
-        switch.id = kwargs.get("switch_id", "custom_switch_id")
-        interface = Interface(interface_name, interface_port, switch)
-        tag = TAG(tag_type, tag_value)
-        uni = Mock(spec=UNI, interface=interface, user_tag=tag)
-        uni.is_valid.return_value = is_valid
-        uni.as_dict.return_value = {
-            "interface_id": f'switch_mock:{interface_port}',
-            "tag": tag.as_dict()
-        }
-        return uni
-
-    @staticmethod
-    def get_link_mocked(**kwargs):
-        """Return a link mocked.
-
-        Args:
-            link_dict: Python dict returned after call link.as_dict()
-        """
-        switch = Mock(spec=Switch)
-        endpoint_a = Interface(kwargs.get('endpoint_a_name', 'eth0'),
-                               kwargs.get('endpoint_a_port', 1), switch)
-        endpoint_b = Interface(kwargs.get('endpoint_b_name', 'eth1'),
-                               kwargs.get('endpoint_b_port', 2), switch)
-        link = Mock(spec=Link, endpoint_a=endpoint_a, endpoint_b=endpoint_b)
-        link.as_dict.return_value = kwargs.get('link_dict', {"id": "link_id"})
-
-        metadata = kwargs.get("metadata", {})
-
-        def side_effect(key):
-            return Mock(value=metadata.get(key))
-
-        link.get_metadata = Mock(side_effect=side_effect)
-
-        return link
-
     def test_update_name(self):
         """Test if raises and error when trying to update the name."""
         attributes = {
             "name": "circuit_name",
-            "uni_a": self.get_uni_mocked(is_valid=True),
-            "uni_z": self.get_uni_mocked(is_valid=True)
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(is_valid=True)
         }
         update_dict = {
             "name": "circuit_name_2"
@@ -136,11 +163,11 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         """Test if raises and error when trying to update the uni_a."""
         attributes = {
             "name": "circuit_name",
-            "uni_a": self.get_uni_mocked(is_valid=True),
-            "uni_z": self.get_uni_mocked(is_valid=True)
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(is_valid=True)
         }
         update_dict = {
-            "uni_a": self.get_uni_mocked(is_valid=True)
+            "uni_a": get_uni_mocked(is_valid=True)
         }
         error_message = "uni_a can't be be updated."
         with self.assertRaises(ValueError) as handle_error:
@@ -152,11 +179,11 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         """Test if raises and error when trying to update the uni_z."""
         attributes = {
             "name": "circuit_name",
-            "uni_a": self.get_uni_mocked(is_valid=True),
-            "uni_z": self.get_uni_mocked(is_valid=True)
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(is_valid=True)
         }
         update_dict = {
-            "uni_z": self.get_uni_mocked(is_valid=True)
+            "uni_z": get_uni_mocked(is_valid=True)
         }
         error_message = "uni_z can't be be updated."
         with self.assertRaises(ValueError) as handle_error:
@@ -168,8 +195,8 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         """Test the method __repr__."""
         attributes = {
             "name": "circuit_name",
-            "uni_a": self.get_uni_mocked(is_valid=True),
-            "uni_z": self.get_uni_mocked(is_valid=True)
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(is_valid=True)
         }
         evc = EVC(**attributes)
         expected_value = f'EVC({evc.id}, {evc.name})'
@@ -179,16 +206,16 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         """Test the method __eq__."""
         attributes = {
             "name": "circuit_name",
-            "uni_a": self.get_uni_mocked(is_valid=True),
-            "uni_z": self.get_uni_mocked(is_valid=True)
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(is_valid=True)
         }
         evc1 = EVC(**attributes)
         evc2 = EVC(**attributes)
 
         attributes = {
             "name": "circuit_name_2",
-            "uni_a": self.get_uni_mocked(is_valid=True),
-            "uni_z": self.get_uni_mocked(is_valid=True)
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(is_valid=True)
         }
         evc3 = EVC(**attributes)
         evc4 = EVC(**attributes)
@@ -198,13 +225,13 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         self.assertEqual(evc2 == evc3, False)
         self.assertEqual(evc3 == evc4, True)
 
-    def test_as_dict_method(self):
+    def test_as_dict(self):
         """Test the method as_dict."""
         attributes = {
             "id": "custom_id",
             "name": "custom_name",
-            "uni_a": self.get_uni_mocked(is_valid=True),
-            "uni_z": self.get_uni_mocked(is_valid=True),
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(is_valid=True),
             "start_date": '2018-08-21T18:44:54',
             "end_date": '2018-08-21T18:44:55',
             'primary_links': [],
@@ -267,14 +294,15 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         """Test primary links zipped method."""
         pass
 
+    @staticmethod
     @patch('napps.kytos.mef_eline.models.log')
-    def test_should_deploy_case1(self, log_mock):
+    def test_should_deploy_case1(log_mock):
         """Test should deploy method without primary links."""
         log_mock.debug.return_value = True
         attributes = {
             "name": "custom_name",
-            "uni_a": self.get_uni_mocked(is_valid=True),
-            "uni_z": self.get_uni_mocked(is_valid=True)
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(is_valid=True)
         }
 
         evc = EVC(**attributes)
@@ -287,9 +315,9 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         log_mock.debug.return_value = True
         attributes = {
             "name": "custom_name",
-            "uni_a": self.get_uni_mocked(is_valid=True),
-            "uni_z": self.get_uni_mocked(is_valid=True),
-            "primary_links": [self.get_link_mocked(), self.get_link_mocked()]
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(is_valid=True),
+            "primary_links": [get_link_mocked(), get_link_mocked()]
         }
         evc = EVC(**attributes)
 
@@ -302,9 +330,9 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         log_mock.debug.return_value = True
         attributes = {
             "name": "custom_name",
-            "uni_a": self.get_uni_mocked(is_valid=True),
-            "uni_z": self.get_uni_mocked(is_valid=True),
-            "primary_links": [self.get_link_mocked(), self.get_link_mocked()],
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(is_valid=True),
+            "primary_links": [get_link_mocked(), get_link_mocked()],
             "enabled": True
         }
         evc = EVC(**attributes)
@@ -317,9 +345,9 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         log_mock.debug.return_value = True
         attributes = {
             "name": "custom_name",
-            "uni_a": self.get_uni_mocked(is_valid=True),
-            "uni_z": self.get_uni_mocked(is_valid=True),
-            "primary_links": [self.get_link_mocked(), self.get_link_mocked()],
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(is_valid=True),
+            "primary_links": [get_link_mocked(), get_link_mocked()],
             "enabled": True,
             "active": True
         }
@@ -356,8 +384,8 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         """Test prepare pop flow  method."""
         attributes = {
             "name": "custom_name",
-            "uni_a": self.get_uni_mocked(interface_port=1, is_valid=True),
-            "uni_z": self.get_uni_mocked(interface_port=2, is_valid=True),
+            "uni_a": get_uni_mocked(interface_port=1, is_valid=True),
+            "uni_z": get_uni_mocked(interface_port=2, is_valid=True),
         }
         evc = EVC(**attributes)
         interface_a = evc.uni_a.interface
@@ -379,8 +407,8 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         """Test prepare push flow method."""
         attributes = {
             "name": "custom_name",
-            "uni_a": self.get_uni_mocked(interface_port=1, is_valid=True),
-            "uni_z": self.get_uni_mocked(interface_port=2, is_valid=True),
+            "uni_a": get_uni_mocked(interface_port=1, is_valid=True),
+            "uni_z": get_uni_mocked(interface_port=2, is_valid=True),
         }
         evc = EVC(**attributes)
         interface_a = evc.uni_a.interface
@@ -405,26 +433,27 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         }
         self.assertEqual(expected_flow_mod, flow_mod)
 
+    @staticmethod
     @patch('napps.kytos.mef_eline.models.EVC.send_flow_mods')
-    def test_install_uni_flows(self, send_flow_mods_mock):
+    def test_install_uni_flows(send_flow_mods_mock):
         """Test install uni flows method.
 
         This test will verify the flows send to the send_flows_mods method.
         """
-        uni_a = self.get_uni_mocked(interface_port=2, tag_value=82,
-                                    switch_id="switch_uni_a", is_valid=True)
-        uni_z = self.get_uni_mocked(interface_port=3, tag_value=83,
-                                    switch_id="switch_uni_z", is_valid=True)
+        uni_a = get_uni_mocked(interface_port=2, tag_value=82,
+                               switch_id="switch_uni_a", is_valid=True)
+        uni_z = get_uni_mocked(interface_port=3, tag_value=83,
+                               switch_id="switch_uni_z", is_valid=True)
 
         attributes = {
             "name": "custom_name",
             "uni_a": uni_a,
             "uni_z": uni_z,
             "primary_links": [
-                self.get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
-                                     metadata={"s_vlan": 5}),
-                self.get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
-                                     metadata={"s_vlan": 6})
+                get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
+                                metadata={"s_vlan": 5}),
+                get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
+                                metadata={"s_vlan": 6})
             ]
         }
         evc = EVC(**attributes)
@@ -481,26 +510,27 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         send_flow_mods_mock.assert_any_call(uni_z.interface.switch,
                                             expected_flow_mod_z)
 
+    @staticmethod
     @patch('napps.kytos.mef_eline.models.EVC.send_flow_mods')
-    def test_install_nni_flows(self, send_flow_mods_mock):
+    def test_install_nni_flows(send_flow_mods_mock):
         """Test install nni flows method.
 
         This test will verify the flows send to the send_flows_mods method.
         """
-        uni_a = self.get_uni_mocked(interface_port=2, tag_value=82,
-                                    switch_id="switch_uni_a", is_valid=True)
-        uni_z = self.get_uni_mocked(interface_port=3, tag_value=83,
-                                    switch_id="switch_uni_z", is_valid=True)
+        uni_a = get_uni_mocked(interface_port=2, tag_value=82,
+                               switch_id="switch_uni_a", is_valid=True)
+        uni_z = get_uni_mocked(interface_port=3, tag_value=83,
+                               switch_id="switch_uni_z", is_valid=True)
 
         attributes = {
             "name": "custom_name",
             "uni_a": uni_a,
             "uni_z": uni_z,
             "primary_links": [
-                self.get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
-                                     metadata={"s_vlan": 5}),
-                self.get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
-                                     metadata={"s_vlan": 6})
+                get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
+                                metadata={"s_vlan": 5}),
+                get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
+                                metadata={"s_vlan": 6})
             ]
         }
         evc = EVC(**attributes)
@@ -544,20 +574,20 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
          install_nni_flows, chose_vlans_mock, log_mock) = args
 
         should_deploy_mock.return_value = True
-        uni_a = self.get_uni_mocked(interface_port=2, tag_value=82,
-                                    switch_id="switch_uni_a", is_valid=True)
-        uni_z = self.get_uni_mocked(interface_port=3, tag_value=83,
-                                    switch_id="switch_uni_z", is_valid=True)
+        uni_a = get_uni_mocked(interface_port=2, tag_value=82,
+                               switch_id="switch_uni_a", is_valid=True)
+        uni_z = get_uni_mocked(interface_port=3, tag_value=83,
+                               switch_id="switch_uni_z", is_valid=True)
 
         attributes = {
             "name": "custom_name",
             "uni_a": uni_a,
             "uni_z": uni_z,
             "primary_links": [
-                self.get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
-                                     metadata={"s_vlan": 5}),
-                self.get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
-                                     metadata={"s_vlan": 6})
+                get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
+                                metadata={"s_vlan": 5}),
+                get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
+                                metadata={"s_vlan": 6})
             ]
         }
 
@@ -583,20 +613,20 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
          install_nni_flows, chose_vlans_mock, log_mock) = args
 
         should_deploy_mock.return_value = False
-        uni_a = self.get_uni_mocked(interface_port=2, tag_value=82,
-                                    switch_id="switch_uni_a", is_valid=True)
-        uni_z = self.get_uni_mocked(interface_port=3, tag_value=83,
-                                    switch_id="switch_uni_z", is_valid=True)
+        uni_a = get_uni_mocked(interface_port=2, tag_value=82,
+                               switch_id="switch_uni_a", is_valid=True)
+        uni_z = get_uni_mocked(interface_port=3, tag_value=83,
+                               switch_id="switch_uni_z", is_valid=True)
 
         attributes = {
             "name": "custom_name",
             "uni_a": uni_a,
             "uni_z": uni_z,
             "primary_links": [
-                self.get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
-                                     metadata={"s_vlan": 5}),
-                self.get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
-                                     metadata={"s_vlan": 6})
+                get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
+                                metadata={"s_vlan": 5}),
+                get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
+                                metadata={"s_vlan": 6})
             ]
         }
 
