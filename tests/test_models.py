@@ -279,7 +279,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
 
         evc = EVC(**attributes)
         evc.should_deploy()
-        log_mock.debug.assert_called_with('Primary links are empty.')
+        log_mock.debug.assert_called_with('Path is empty.')
 
     @patch('napps.kytos.mef_eline.models.log')
     def test_should_deploy_case2(self, log_mock):
@@ -293,7 +293,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         }
         evc = EVC(**attributes)
 
-        self.assertFalse(evc.should_deploy())
+        self.assertFalse(evc.should_deploy(attributes['primary_links']))
         log_mock.debug.assert_called_with(f'{evc} is disabled.')
 
     @patch('napps.kytos.mef_eline.models.log')
@@ -308,7 +308,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
             "enabled": True
         }
         evc = EVC(**attributes)
-        self.assertTrue(evc.should_deploy())
+        self.assertTrue(evc.should_deploy(attributes['primary_links']))
         log_mock.debug.assert_called_with(f'{evc} will be deployed.')
 
     @patch('napps.kytos.mef_eline.models.log')
@@ -324,7 +324,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
             "active": True
         }
         evc = EVC(**attributes)
-        self.assertFalse(evc.should_deploy())
+        self.assertFalse(evc.should_deploy(attributes['primary_links']))
 
     @patch('napps.kytos.mef_eline.models.requests')
     def test_send_flow_mods(self, requests_mock):
@@ -428,7 +428,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
             ]
         }
         evc = EVC(**attributes)
-        evc.install_uni_flows()
+        evc.install_uni_flows(attributes['primary_links'])
 
         expected_flow_mod_a = [
             {'match': {'in_port': uni_a.interface.port_number,
@@ -504,7 +504,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
             ]
         }
         evc = EVC(**attributes)
-        evc.install_nni_flows()
+        evc.install_nni_flows(attributes['primary_links'])
 
         in_vlan = evc.primary_links[0].get_metadata('s_vlan').value
         out_vlan = evc.primary_links[-1].get_metadata('s_vlan').value
@@ -533,7 +533,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         send_flow_mods_mock.assert_called_once_with(switch, expected_flow_mods)
 
     @patch('napps.kytos.mef_eline.models.log')
-    @patch('napps.kytos.mef_eline.models.EVC._chose_vlans')
+    @patch('napps.kytos.mef_eline.models.EVC.choose_vlans')
     @patch('napps.kytos.mef_eline.models.EVC.install_nni_flows')
     @patch('napps.kytos.mef_eline.models.EVC.install_uni_flows')
     @patch('napps.kytos.mef_eline.models.EVC.activate')
@@ -572,7 +572,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         log_mock.info.assert_called_once_with(f"{evc} was deployed.")
 
     @patch('napps.kytos.mef_eline.models.log')
-    @patch('napps.kytos.mef_eline.models.EVC._chose_vlans')
+    @patch('napps.kytos.mef_eline.models.EVC.choose_vlans')
     @patch('napps.kytos.mef_eline.models.EVC.install_nni_flows')
     @patch('napps.kytos.mef_eline.models.EVC.install_uni_flows')
     @patch('napps.kytos.mef_eline.models.EVC.activate')

@@ -11,8 +11,8 @@ from kytos.core.interface import UNI
 from napps.kytos.mef_eline import settings
 
 
-class EVC(GenericEntity):
-    """Class that represents a E-Line Virtual Connection."""
+class EVCBase(GenericEntity):
+    """"Class to represent a circuit."""
 
     unique_attributes = ['name', 'uni_a', 'uni_z']
 
@@ -200,12 +200,21 @@ class EVC(GenericEntity):
 
         return evc_dict
 
+    @property
+    def id(self):  # pylint: disable=invalid-name
+        """Return this EVC's ID."""
+        return self._id
+
+
+class EVCDeploy(EVCBase):
+    """Class to handle the deploy procedures."""
+
     def create(self):
         """Create a EVC."""
         pass
 
     def discover_new_path(self):
-        """Discover a new path for EVC."""
+        """Discover a new path to satisfy this circuit and deploy."""
         pass
 
     def change_path(self, path):
@@ -220,27 +229,25 @@ class EVC(GenericEntity):
         """Remove EVC path."""
         pass
 
-    @property
-    def id(self):  # pylint: disable=invalid-name
-        """Return this EVC's ID."""
-        return self._id
-
-    def _chose_vlans(self):
-        """Chose the VLANs to be used for the circuit."""
-        for link in self.primary_links:
+    @staticmethod
+    def choose_vlans(path=None):
+        """Choose the VLANs to be used for the circuit."""
+        for link in path:
             tag = link.get_next_available_tag()
             link.use_tag(tag)
             link.add_metadata('s_vlan', tag)
 
-    def primary_links_zipped(self):
+    @staticmethod
+    def links_zipped(path=None):
         """Return an iterator which yields pairs of links in order."""
-        return zip(self.primary_links[:-1],
-                   self.primary_links[1:])
+        if not path:
+            return []
+        return zip(path[:-1], path[1:])
 
-    def should_deploy(self):
+    def should_deploy(self, path=None):
         """Verify if the circuit should be deployed."""
-        if not self.primary_links:
-            log.debug("Primary links are empty.")
+        if not path:
+            log.debug("Path is empty.")
             return False
 
         if not self.is_enabled():
@@ -253,20 +260,32 @@ class EVC(GenericEntity):
 
         return False
 
-    def deploy(self):
-        """Install the flows for this circuit."""
-        if not self.should_deploy():
+    def deploy(self, path=None):
+        """Install the flows for this circuit.
+
+        Procedures to deploy:
+
+        1. Decide if will deploy "path" or discover a new path
+        2. Choose vlan
+        3. Install NNI flows
+        4. Install UNI flows
+        5. Activate
+        6. Update current_path
+        7. Update links caches(primary, current, backup)
+
+        """
+        if not self.should_deploy(path):
             return
 
-        self._chose_vlans()
-        self.install_nni_flows()
-        self.install_uni_flows()
+        self.choose_vlans(path)
+        self.install_nni_flows(path)
+        self.install_uni_flows(path)
         self.activate()
         log.info(f"{self} was deployed.")
 
-    def install_nni_flows(self):
+    def install_nni_flows(self, path=None):
         """Install NNI flows."""
-        for incoming, outcoming in self.primary_links_zipped():
+        for incoming, outcoming in self.links_zipped(path):
             in_vlan = incoming.get_metadata('s_vlan').value
             out_vlan = outcoming.get_metadata('s_vlan').value
 
@@ -282,27 +301,30 @@ class EVC(GenericEntity):
                                                out_vlan, in_vlan))
             self.send_flow_mods(incoming.endpoint_b.switch, flows)
 
-    def install_uni_flows(self):
+    def install_uni_flows(self, path=None):
         """Install UNI flows."""
-        # Install UNI flows
+        if not path:
+            log.info('install uni flows without path.')
+            return
+
         # Determine VLANs
         in_vlan_a = self.uni_a.user_tag.value if self.uni_a.user_tag else None
-        out_vlan_a = self.primary_links[0].get_metadata('s_vlan').value
+        out_vlan_a = path[0].get_metadata('s_vlan').value
 
         in_vlan_z = self.uni_z.user_tag.value if self.uni_z.user_tag else None
-        out_vlan_z = self.primary_links[-1].get_metadata('s_vlan').value
+        out_vlan_z = path[-1].get_metadata('s_vlan').value
 
         # Flows for the first UNI
         flows_a = []
 
         # Flow for one direction, pushing the service tag
         push_flow = self.prepare_push_flow(self.uni_a.interface,
-                                           self.primary_links[0].endpoint_a,
+                                           path[0].endpoint_a,
                                            in_vlan_a, out_vlan_a, in_vlan_z)
         flows_a.append(push_flow)
 
         # Flow for the other direction, popping the service tag
-        pop_flow = self.prepare_pop_flow(self.primary_links[0].endpoint_a,
+        pop_flow = self.prepare_pop_flow(path[0].endpoint_a,
                                          self.uni_a.interface, out_vlan_a)
         flows_a.append(pop_flow)
 
@@ -313,12 +335,12 @@ class EVC(GenericEntity):
 
         # Flow for one direction, pushing the service tag
         push_flow = self.prepare_push_flow(self.uni_z.interface,
-                                           self.primary_links[-1].endpoint_b,
+                                           path[-1].endpoint_b,
                                            in_vlan_z, out_vlan_z, in_vlan_a)
         flows_z.append(push_flow)
 
         # Flow for the other direction, popping the service tag
-        pop_flow = self.prepare_pop_flow(self.primary_links[-1].endpoint_b,
+        pop_flow = self.prepare_pop_flow(path[-1].endpoint_b,
                                          self.uni_z.interface, out_vlan_z)
         flows_z.append(pop_flow)
 
@@ -395,3 +417,8 @@ class EVC(GenericEntity):
         new_action = {"action_type": "pop_vlan"}
         flow_mod["actions"].insert(0, new_action)
         return flow_mod
+
+
+class EVC(EVCDeploy):
+    """Class that represents a E-Line Virtual Connection."""
+    pass
