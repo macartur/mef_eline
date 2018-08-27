@@ -310,13 +310,14 @@ class EVCDeploy(EVCBase):
 
         """
         if not self.should_deploy(path):
-            return
+            return False
 
         self.choose_vlans(path)
         self.install_nni_flows(path)
         self.install_uni_flows(path)
         self.activate()
         log.info(f"{self} was deployed.")
+        return True
 
     def install_nni_flows(self, path=None):
         """Install NNI flows."""
@@ -454,7 +455,60 @@ class EVCDeploy(EVCBase):
         return flow_mod
 
 
-class EVC(EVCDeploy):
+class LinkProtection(EVCDeploy):
+    """Class to handle link protection."""
+
+    def is_affected_by_link(self, link=None):
+        """Verify if the current path is affected by link down event."""
+        return self.current_path.is_affected_by_link(link)
+
+    def is_using_primary_path(self):
+        """Verify if the current deployed path is self.primary_path."""
+        return self.current_path == self.primary_path
+
+    def is_using_backup_path(self):
+        """Verify if the current deployed path is self.backup_path."""
+        return self.current_path == self.backup_path
+
+    def deploy_to(self, path_name=None, path=None):
+        """Create a deploy to path."""
+        if self.current_path == path:
+            log.debug(f'{path_name} is equal to current_path.')
+            return False
+
+        if path.status is EntityStatus.UP:
+            return self.deploy(path)
+
+        return False
+
+    def handle_link_down(self):
+        """Handle circuit when link down.
+
+        Args:
+            link(Link): Link affected by link.down event.
+
+        Returns:
+            bool: True if the re-deploy was successly otherwise False.
+
+        """
+        success = False
+        if self.is_using_primary_path():
+            success = self.deploy_to('backup_path', self.backup_path)
+        elif self.is_using_backup_path():
+            success = self.deploy_to('primary_path', self.primary_path)
+
+        if not success and self.dynamic_backup_path:
+            success = self.deploy()
+
+        if success:
+            log.debug(f"{self} deployed after link down.")
+        else:
+            log.debug(f'Failed to re-deploy {self} after link down.')
+
+        return success
+
+
+class EVC(LinkProtection):
     """Class that represents a E-Line Virtual Connection."""
 
     pass
