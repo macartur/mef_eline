@@ -5,10 +5,49 @@ from uuid import uuid4
 import requests
 
 from kytos.core import log
-from kytos.core.common import GenericEntity
+from kytos.core.common import EntityStatus, GenericEntity
 from kytos.core.helpers import get_time, now
 from kytos.core.interface import UNI
 from napps.kytos.mef_eline import settings
+
+
+class Path(list, GenericEntity):
+    """Class to represent a Path."""
+
+    def __init__(self, *args, **kwargs):
+        """Create a path instance using links."""
+        super().__init__(*args, **kwargs)
+        self.links_cache = set(self)
+
+    def __eq__(self, other=None):
+        """Compare paths."""
+        if not other or not isinstance(other, Path):
+            return False
+        return super().__eq__(other)
+
+    def is_affected_by_link(self, link=None):
+        """Verify if the current path is affected by link."""
+        if not link:
+            return False
+        return link in self.links_cache
+
+    @property
+    def status(self):
+        """Check for the  status of a path.
+
+        If any link in this path is down, the path is considered down.
+        """
+        if not self:
+            return EntityStatus.DISABLED
+
+        for link in self:
+            if link.status is not EntityStatus.UP:
+                return link.status
+        return EntityStatus.UP
+
+    def as_dict(self):
+        """Return list comprehension of links as_dict."""
+        return [link.as_dict() for link in self if link]
 
 
 class EVCBase(GenericEntity):
@@ -31,7 +70,7 @@ class EVCBase(GenericEntity):
             bandwidth(int): Bandwidth used by EVC instance. Default is 0.
             primary_links(list): Primary links used by evc. Default is []
             backup_links(list): Backups links used by evc. Default is []
-            current_path(list):circuit being used at the moment if this is an
+            current_path(list): Circuit being used at the moment if this is an
                                 active circuit. Default is [].
             primary_path(list): primary circuit offered to user IF one or more
                                 links were provided. Default is [].
@@ -66,11 +105,11 @@ class EVCBase(GenericEntity):
         self.end_date = get_time(kwargs.get('end_date')) or None
 
         self.bandwidth = kwargs.get('bandwidth', 0)
-        self.primary_links = kwargs.get('primary_links', [])
-        self.backup_links = kwargs.get('backup_links', [])
-        self.current_path = kwargs.get('current_path', [])
-        self.primary_path = kwargs.get('primary_path', [])
-        self.backup_path = kwargs.get('backup_path', [])
+        self.primary_links = Path(kwargs.get('primary_links', []))
+        self.backup_links = Path(kwargs.get('backup_links', []))
+        self.current_path = Path(kwargs.get('current_path', []))
+        self.primary_path = Path(kwargs.get('primary_path', []))
+        self.backup_path = Path(kwargs.get('backup_path', []))
         self.dynamic_backup_path = kwargs.get('dynamic_backup_path', False)
         self.creation_time = get_time(kwargs.get('creation_time')) or now()
         self.owner = kwargs.get('owner', None)
@@ -159,10 +198,6 @@ class EVCBase(GenericEntity):
 
         time_fmt = "%Y-%m-%dT%H:%M:%S"
 
-        def link_as_dict(links):
-            """Return list comprehension of links as_dict."""
-            return [link.as_dict() for link in links if link]
-
         evc_dict["start_date"] = self.start_date
         if isinstance(self.start_date, datetime):
             evc_dict["start_date"] = self.start_date.strftime(time_fmt)
@@ -172,11 +207,11 @@ class EVCBase(GenericEntity):
             evc_dict["end_date"] = self.end_date.strftime(time_fmt)
 
         evc_dict['bandwidth'] = self.bandwidth
-        evc_dict['primary_links'] = link_as_dict(self.primary_links)
-        evc_dict['backup_links'] = link_as_dict(self.backup_links)
-        evc_dict['current_path'] = link_as_dict(self.current_path)
-        evc_dict['primary_path'] = link_as_dict(self.primary_path)
-        evc_dict['backup_path'] = link_as_dict(self.backup_path)
+        evc_dict['primary_links'] = self.primary_links.as_dict()
+        evc_dict['backup_links'] = self.backup_links.as_dict()
+        evc_dict['current_path'] = self.current_path.as_dict()
+        evc_dict['primary_path'] = self.primary_path.as_dict()
+        evc_dict['backup_path'] = self.backup_path.as_dict()
         evc_dict['dynamic_backup_path'] = self.dynamic_backup_path
 
         if self._requested:
@@ -421,4 +456,5 @@ class EVCDeploy(EVCBase):
 
 class EVC(EVCDeploy):
     """Class that represents a E-Line Virtual Connection."""
+
     pass
