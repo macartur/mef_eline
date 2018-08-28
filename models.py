@@ -250,7 +250,7 @@ class EVCDeploy(EVCBase):
 
     def discover_new_path(self, path=None):
         """Discover a new path to satisfy this circuit and deploy."""
-        pass
+        return []
 
     def change_path(self, path):
         """Change EVC path."""
