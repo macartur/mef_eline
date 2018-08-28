@@ -99,9 +99,19 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         """Test prepare flow_mod method."""
         interface_a = Interface('eth0', 1, Mock(spec=Switch))
         interface_z = Interface('eth1', 3, Mock(spec=Switch))
-        flow_mod = EVC.prepare_flow_mod(interface_a, interface_z)
+        attributes = {
+            "name": "custom_name",
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(is_valid=True),
+            "primary_links": [get_link_mocked(), get_link_mocked()],
+            "enabled": True,
+            "active": True
+        }
+        evc = EVC(**attributes)
+        flow_mod = evc.prepare_flow_mod(interface_a, interface_z)
         expected_flow_mod = {
                            'match': {'in_port': interface_a.port_number},
+                           'cookie': evc.get_cookie(),
                            'actions': [
                                        {'action_type': 'output',
                                         'port': interface_z.port_number}
@@ -123,6 +133,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         flow_mod = evc.prepare_pop_flow(interface_a, interface_z, in_vlan)
         expected_flow_mod = {
             'match': {'in_port': interface_a.port_number, 'dl_vlan': in_vlan},
+            'cookie': evc.get_cookie(),
             'actions': [
                         {'action_type': 'pop_vlan'},
                         {'action_type': 'output',
@@ -151,6 +162,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
             'match': {'in_port': interface_a.port_number,
                       'dl_vlan': in_vlan_a
                       },
+            'cookie': evc.get_cookie(),
             'actions': [
                         {'action_type': 'set_vlan', 'vlan_id': in_vlan_z},
                         {'action_type': 'push_vlan', 'tag_type': 's'},
@@ -191,6 +203,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         expected_flow_mod_a = [
             {'match': {'in_port': uni_a.interface.port_number,
                        'dl_vlan': uni_a.user_tag.value},
+             'cookie': evc.get_cookie(),
              'actions': [
                 {'action_type': 'set_vlan', 'vlan_id': uni_z.user_tag.value},
                 {'action_type': 'push_vlan', 'tag_type': 's'},
@@ -203,6 +216,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
                 'in_port': evc.primary_links[0].endpoint_a.port_number,
                 'dl_vlan': evc.primary_links[0].get_metadata('s_vlan').value
              },
+             'cookie': evc.get_cookie(),
              'actions': [
                 {'action_type': 'pop_vlan'},
                 {'action_type': 'output', 'port': uni_a.interface.port_number}
@@ -215,6 +229,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         expected_flow_mod_z = [
             {'match': {'in_port': uni_z.interface.port_number,
                        'dl_vlan': uni_z.user_tag.value},
+             'cookie': evc.get_cookie(),
              'actions': [
                 {'action_type': 'set_vlan', 'vlan_id': uni_a.user_tag.value},
                 {'action_type': 'push_vlan', 'tag_type': 's'},
@@ -229,6 +244,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
                  'in_port': evc.primary_links[-1].endpoint_b.port_number,
                  'dl_vlan': evc.primary_links[-1].get_metadata('s_vlan').value
              },
+             'cookie': evc.get_cookie(),
              'actions': [
                 {'action_type': 'pop_vlan'},
                 {'action_type': 'output', 'port': uni_z.interface.port_number}
@@ -272,15 +288,17 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         out_port = evc.primary_links[-1].endpoint_a.port_number
 
         expected_flow_mods = [
-            {'match': {
-                'in_port': in_port,
-                'dl_vlan': in_vlan},
-                'actions': [
+            {
+             'match': {'in_port': in_port, 'dl_vlan': in_vlan},
+             'cookie': evc.get_cookie(),
+             'actions': [
                     {'action_type': 'set_vlan', 'vlan_id': out_vlan},
                     {'action_type': 'output', 'port': out_port}
                 ]
              },
-            {'match': {'in_port': out_port, 'dl_vlan': out_vlan},
+            {
+             'match': {'in_port': out_port, 'dl_vlan': out_vlan},
+             'cookie': evc.get_cookie(),
              'actions': [
                 {'action_type': 'set_vlan', 'vlan_id': in_vlan},
                 {'action_type': 'output', 'port': in_port}

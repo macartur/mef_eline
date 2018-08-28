@@ -2,7 +2,6 @@
 
 NApp to provision circuits from user request.
 """
-import requests
 from flask import jsonify, request
 
 from kytos.core import KytosNApp, log, rest
@@ -10,8 +9,7 @@ from kytos.core.events import KytosEvent
 from kytos.core.helpers import listen_to
 from kytos.core.interface import TAG, UNI
 from kytos.core.link import Link
-from napps.kytos.mef_eline import settings
-from napps.kytos.mef_eline.models import EVC
+from napps.kytos.mef_eline.models import EVC, DynamicPathManager
 from napps.kytos.mef_eline.scheduler import CircuitSchedule, Scheduler
 from napps.kytos.mef_eline.storehouse import StoreHouse
 
@@ -30,8 +28,14 @@ class Main(KytosNApp):
 
         So, if you have any setup routine, insert it here.
         """
+        # object used to scheduler circuit events
         self.sched = Scheduler()
+
+        # object to save and load circuits
         self.storehouse = StoreHouse(self.controller)
+
+        # set the controller that will manager the dynamic paths
+        DynamicPathManager.set_controller(self.controller)
 
     def execute(self):
         """Execute once when the napp is running."""
@@ -43,50 +47,6 @@ class Main(KytosNApp):
         If you have some cleanup procedure, insert it here.
         """
         pass
-
-    @staticmethod
-    def _clear_path(path):
-        """Remove switches from a path, returning only interfaeces."""
-        return [endpoint for endpoint in path if len(endpoint) > 23]
-
-    @staticmethod
-    def get_paths(circuit):
-        """Get a valid path for the circuit from the Pathfinder."""
-        endpoint = settings.PATHFINDER_URL
-        request_data = {"source": circuit.uni_a.interface.id,
-                        "destination": circuit.uni_z.interface.id}
-        api_reply = requests.post(endpoint, json=request_data)
-
-        if api_reply.status_code != getattr(requests.codes, 'ok'):
-            log.error("Failed to get paths at %s. Returned %s",
-                      endpoint, api_reply.status_code)
-            return None
-        reply_data = api_reply.json()
-        return reply_data.get('paths')
-
-    def get_best_path(self, circuit):
-        """Return the best path available for a circuit, if exists."""
-        paths = self.get_paths(circuit)
-        if paths:
-            return self.create_path(self.get_paths(circuit)[0]['hops'])
-        return None
-
-    def create_path(self, path):
-        """Return the path containing only the interfaces."""
-        new_path = []
-        clean_path = self._clear_path(path)
-
-        if len(clean_path) % 2:
-            return None
-
-        for link in zip(clean_path[1:-1:2], clean_path[2::2]):
-            interface_a = self.controller.get_interface_by_id(link[0])
-            interface_b = self.controller.get_interface_by_id(link[1])
-            if interface_a is None or interface_b is None:
-                return None
-            new_path.append(Link(interface_a, interface_b))
-
-        return new_path
 
     @rest('/v2/evc/', methods=['GET'])
     def list_circuits(self):
@@ -150,9 +110,6 @@ class Main(KytosNApp):
 
         # save circuit
         self.storehouse.save_evc(evc)
-
-        # Request paths to Pathfinder
-        evc.primary_links = self.get_best_path(evc) or []
 
         # Schedule the circuit deploy
         self.sched.add(evc)

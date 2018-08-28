@@ -8,6 +8,7 @@ from kytos.core import log
 from kytos.core.common import EntityStatus, GenericEntity
 from kytos.core.helpers import get_time, now
 from kytos.core.interface import UNI
+from kytos.core.link import Link
 from napps.kytos.mef_eline import settings
 
 
@@ -48,6 +49,63 @@ class Path(list, GenericEntity):
     def as_dict(self):
         """Return list comprehension of links as_dict."""
         return [link.as_dict() for link in self if link]
+
+
+class DynamicPathManager:
+    """Class to handle and create paths."""
+
+    controller = None
+
+    @classmethod
+    def set_controller(cls, controller=None):
+        """Set the controller to discovery news paths."""
+        cls.controller = controller
+
+    @staticmethod
+    def get_paths(circuit):
+        """Get a valid path for the circuit from the Pathfinder."""
+        endpoint = settings.PATHFINDER_URL
+        request_data = {"source": circuit.uni_a.interface.id,
+                        "destination": circuit.uni_z.interface.id}
+        api_reply = requests.post(endpoint, json=request_data)
+
+        if api_reply.status_code != getattr(requests.codes, 'ok'):
+            log.error("Failed to get paths at %s. Returned %s",
+                      endpoint, api_reply.status_code)
+            return None
+        reply_data = api_reply.json()
+        return reply_data.get('paths')
+
+    @staticmethod
+    def _clear_path(path):
+        """Remove switches from a path, returning only interfaeces."""
+        return [endpoint for endpoint in path if len(endpoint) > 23]
+
+    @classmethod
+    def get_best_path(cls, circuit):
+        """Return the best path available for a circuit, if exists."""
+        paths = cls.get_paths(circuit)
+        if paths:
+            return cls.create_path(cls.get_paths(circuit)[0]['hops'])
+        return None
+
+    @classmethod
+    def create_path(cls, path):
+        """Return the path containing only the interfaces."""
+        new_path = Path()
+        clean_path = cls._clear_path(path)
+
+        if len(clean_path) % 2:
+            return None
+
+        for link in zip(clean_path[1:-1:2], clean_path[2::2]):
+            interface_a = cls.controller.get_interface_by_id(link[0])
+            interface_b = cls.controller.get_interface_by_id(link[1])
+            if interface_a is None or interface_b is None:
+                return None
+            new_path.append(Link(interface_a, interface_b))
+
+        return new_path
 
 
 class EVCBase(GenericEntity):
@@ -248,11 +306,11 @@ class EVCDeploy(EVCBase):
         """Create a EVC."""
         pass
 
-    def discover_new_path(self, path=None):
+    def discover_new_path(self):
         """Discover a new path to satisfy this circuit and deploy."""
-        return []
+        return DynamicPathManager.get_best_path(self)
 
-    def change_path(self, path):
+    def change_path(self):
         """Change EVC path."""
         pass
 
@@ -263,6 +321,19 @@ class EVCDeploy(EVCBase):
     def remove(self):
         """Remove EVC path."""
         pass
+
+    def remove_current_flows(self):
+        """Remove all flows from current path."""
+        switches = set()
+
+        for link in self.current_path:
+            switches.add(link.endpoint_a.switch)
+            switches.add(link.endpoint_b.switch)
+
+        flows = [{'cookie': self.get_cookie()}]
+        for switch in switches:
+            self.send_flow_mods(switch, flows, 'delete')
+        self.deactivate()
 
     @staticmethod
     def choose_vlans(path=None):
@@ -300,6 +371,7 @@ class EVCDeploy(EVCBase):
 
         Procedures to deploy:
 
+        0. Remove current flows installed
         1. Decide if will deploy "path" or discover a new path
         2. Choose vlan
         3. Install NNI flows
@@ -309,14 +381,16 @@ class EVCDeploy(EVCBase):
         7. Update links caches(primary, current, backup)
 
         """
+        self.remove_current_flows()
+
         if not self.should_deploy(path):
             return False
 
         if path is None:
-            path = self.discover_new_path(path)
+            path = self.discover_new_path()
 
-        if not path:
-            return False
+            if not path:
+                return False
 
         self.choose_vlans(path)
         self.install_nni_flows(path)
@@ -389,20 +463,32 @@ class EVCDeploy(EVCBase):
         self.send_flow_mods(self.uni_z.interface.switch, flows_z)
 
     @staticmethod
-    def send_flow_mods(switch, flow_mods):
-        """Send a flow_mod list to a specific switch."""
-        endpoint = "%s/flows/%s" % (settings.MANAGER_URL, switch.id)
+    def send_flow_mods(switch, flow_mods, command='flows'):
+        """Send a flow_mod list to a specific switch.
+
+        Args:
+            switch(Switch): The target of flows.
+            flow_mods(dict): Python dictionary with flow_mods.
+            command(str): By default is 'flows'. To remove a flow is 'remove'.
+
+        """
+        endpoint = f'{settings.MANAGER_URL}/{command}/{switch.id}'
 
         data = {"flows": flow_mods}
         requests.post(endpoint, json=data)
 
-    @staticmethod
-    def prepare_flow_mod(in_interface, out_interface):
+    def get_cookie(self):
+        """Return the cookie integer from evc id."""
+        value = self.id[len(self.id)//2:]
+        return int(value, 16)
+
+    def prepare_flow_mod(self, in_interface, out_interface):
         """Prepare a common flow mod."""
         default_action = {"action_type": "output",
                           "port": out_interface.port_number}
 
         flow_mod = {"match": {"in_port": in_interface.port_number},
+                    "cookie": self.get_cookie(),
                     "actions": [default_action]}
 
         return flow_mod
