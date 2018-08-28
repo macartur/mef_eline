@@ -705,7 +705,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         expected_deployed = evc.deploy_to('primary_path', evc.primary_path)
         expected_msg = 'primary_path is equal to current_path.'
         log_mocked.debug.assert_called_with(expected_msg)
-        self.assertFalse(expected_deployed)
+        self.assertTrue(expected_deployed)
 
     @patch('napps.kytos.mef_eline.models.EVCDeploy.deploy')
     def test_deploy_to_case_2(self, deploy_mocked):
@@ -919,3 +919,165 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         self.assertTrue(current_handle_link_down)
         msg = f"{evc} deployed after link down."
         log_mocked.debug.assert_called_once_with(msg)
+
+    @patch('napps.kytos.mef_eline.models.EVCDeploy.deploy')
+    @patch('napps.kytos.mef_eline.models.LinkProtection.deploy_to')
+    def test_handle_link_up_case_1(self, deploy_to_mocked, deploy_mocked):
+        """Test if handle link up do nothing when is using primary path."""
+        deploy_mocked.return_value = True
+        deploy_to_mocked.return_value = True
+        primary_path = [
+                get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
+                                metadata={"s_vlan": 5},
+                                status=EntityStatus.UP),
+                get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
+                                metadata={"s_vlan": 6},
+                                status=EntityStatus.UP),
+        ]
+        backup_path = [
+                get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
+                                metadata={"s_vlan": 5},
+                                status=EntityStatus.UP),
+                get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
+                                metadata={"s_vlan": 6},
+                                status=EntityStatus.UP),
+        ]
+        attributes = {
+            "name": "circuit_name",
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(is_valid=True),
+            "primary_path": primary_path,
+            "backup_path": backup_path,
+            "enabled": True,
+            "dynamic_backup_path": True
+        }
+
+        evc = EVC(**attributes)
+        evc.current_path = evc.primary_path
+        current_handle_link_up = evc.handle_link_up(backup_path[0])
+        self.assertEqual(deploy_mocked.call_count, 0)
+        self.assertEqual(deploy_to_mocked.call_count, 0)
+        self.assertTrue(current_handle_link_up)
+
+    @patch('napps.kytos.mef_eline.models.EVCDeploy.deploy')
+    @patch('napps.kytos.mef_eline.models.LinkProtection.deploy_to')
+    def test_handle_link_up_case_2(self, deploy_to_mocked, deploy_mocked):
+        """Test if it is changing from backup_path to primary_path."""
+        deploy_mocked.return_value = True
+        deploy_to_mocked.return_value = True
+        primary_path = [
+                get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
+                                metadata={"s_vlan": 5},
+                                status=EntityStatus.UP),
+                get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
+                                metadata={"s_vlan": 6},
+                                status=EntityStatus.UP),
+        ]
+        backup_path = [
+                get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
+                                metadata={"s_vlan": 5},
+                                status=EntityStatus.UP),
+                get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
+                                metadata={"s_vlan": 6},
+                                status=EntityStatus.UP),
+        ]
+        attributes = {
+            "name": "circuit_name",
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(is_valid=True),
+            "primary_path": primary_path,
+            "backup_path": backup_path,
+            "enabled": True,
+            "dynamic_backup_path": True
+        }
+
+        evc = EVC(**attributes)
+        evc.current_path = evc.backup_path
+        current_handle_link_up = evc.handle_link_up(primary_path[0])
+        self.assertEqual(deploy_mocked.call_count, 0)
+        self.assertEqual(deploy_to_mocked.call_count, 1)
+        deploy_to_mocked.assert_called_once_with('primary_path',
+                                                 evc.primary_path)
+        self.assertTrue(current_handle_link_up)
+
+    @patch('napps.kytos.mef_eline.models.EVCDeploy.deploy')
+    @patch('napps.kytos.mef_eline.models.LinkProtection.deploy_to')
+    def test_handle_link_up_case_3(self, deploy_to_mocked, deploy_mocked):
+        """Test if it is deployed after the backup is up."""
+        deploy_mocked.return_value = True
+        deploy_to_mocked.return_value = True
+        primary_path = [
+                get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
+                                metadata={"s_vlan": 5},
+                                status=EntityStatus.DOWN),
+                get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
+                                metadata={"s_vlan": 6},
+                                status=EntityStatus.UP),
+        ]
+        backup_path = [
+                get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
+                                metadata={"s_vlan": 5},
+                                status=EntityStatus.DOWN),
+                get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
+                                metadata={"s_vlan": 6},
+                                status=EntityStatus.UP),
+        ]
+        attributes = {
+            "name": "circuit_name",
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(is_valid=True),
+            "primary_path": primary_path,
+            "backup_path": backup_path,
+            "enabled": True,
+            "dynamic_backup_path": True
+        }
+
+        evc = EVC(**attributes)
+        evc.current_path = Path([])
+        current_handle_link_up = evc.handle_link_up(backup_path[0])
+        self.assertEqual(deploy_mocked.call_count, 0)
+        self.assertEqual(deploy_to_mocked.call_count, 1)
+        deploy_to_mocked.assert_called_once_with('backup_path',
+                                                 evc.backup_path)
+        self.assertTrue(current_handle_link_up)
+
+    @patch('napps.kytos.mef_eline.models.EVCDeploy.deploy')
+    @patch('napps.kytos.mef_eline.models.LinkProtection.deploy_to')
+    def test_handle_link_up_case_4(self, deploy_to_mocked, deploy_mocked):
+        """Test if it is deployed after the dynamic_backup_path deploy."""
+        deploy_mocked.return_value = True
+        deploy_to_mocked.return_value = False
+        primary_path = [
+                get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
+                                metadata={"s_vlan": 5},
+                                status=EntityStatus.DOWN),
+                get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
+                                metadata={"s_vlan": 6},
+                                status=EntityStatus.UP),
+        ]
+        backup_path = [
+                get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
+                                metadata={"s_vlan": 5},
+                                status=EntityStatus.DOWN),
+                get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
+                                metadata={"s_vlan": 6},
+                                status=EntityStatus.UP),
+        ]
+        attributes = {
+            "name": "circuit_name",
+            "uni_a": get_uni_mocked(is_valid=True),
+            "uni_z": get_uni_mocked(is_valid=True),
+            "primary_path": primary_path,
+            "backup_path": backup_path,
+            "enabled": True,
+            "dynamic_backup_path": True
+        }
+
+        evc = EVC(**attributes)
+        evc.current_path = Path([])
+        current_handle_link_up = evc.handle_link_up(backup_path[0])
+        self.assertEqual(deploy_mocked.call_count, 1)
+        self.assertEqual(deploy_to_mocked.call_count, 1)
+        deploy_to_mocked.assert_called_once_with('backup_path',
+                                                 evc.backup_path)
+        self.assertTrue(current_handle_link_up)
