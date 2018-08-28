@@ -13,6 +13,8 @@ from subprocess import call, check_call
 from setuptools import Command, setup
 from setuptools.command.develop import develop
 from setuptools.command.install import install
+from setuptools.command.egg_info import egg_info
+
 
 if 'bdist_wheel' in sys.argv:
     raise RuntimeError("This setup.py does not support wheels")
@@ -127,6 +129,22 @@ class InstallMode(install):
         print(self.description)
 
 
+class EggInfo(egg_info):
+    """Prepare files to be packed."""
+
+    def run(self):
+        """Build css."""
+        self._install_deps_wheels()
+        super().run()
+
+    @staticmethod
+    def _install_deps_wheels():
+        """Python wheels are much faster (no compiling)."""
+        print('Installing dependencies...')
+        check_call([sys.executable, '-m', 'pip', 'install', '-r',
+                    'requirements/run.in'])
+
+
 class DevelopMode(develop):
     """Recommended setup for kytos-napps developers.
 
@@ -170,17 +188,22 @@ class DevelopMode(develop):
         dst = CURR_DIR / 'napps' / '__init__.py'
         src.symlink_to(dst)
 
-
-REQUIREMENTS = [i.strip() for i in open("requirements.txt").readlines()]
-
-setup(name='kytos/mef_eline',
+setup(name='kytos_mef_eline',
       version='2.2.0',
       description='Core Napps developed by Kytos Team',
       url='http://github.com/kytos/mef_eline',
       author='Kytos Team',
       author_email='of-ng-dev@ncc.unesp.br',
       license='MIT',
-      install_requires=REQUIREMENTS,
+      install_requires=['setuptools >= 36.0.1'],
+      extras_require={
+          'dev': [
+              'coverage',
+              'pip-tools',
+              'yala',
+              'tox',
+          ],
+      },
       cmdclass={
           'clean': Cleaner,
           'ci': CITest,
@@ -188,6 +211,7 @@ setup(name='kytos/mef_eline',
           'develop': DevelopMode,
           'install': InstallMode,
           'lint': Linter,
+          'egg_info': EggInfo,
       },
       zip_safe=False,
       classifiers=[
