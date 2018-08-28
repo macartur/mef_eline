@@ -12,9 +12,8 @@ from subprocess import call, check_call
 
 from setuptools import Command, setup
 from setuptools.command.develop import develop
-from setuptools.command.install import install
 from setuptools.command.egg_info import egg_info
-
+from setuptools.command.install import install
 
 if 'bdist_wheel' in sys.argv:
     raise RuntimeError("This setup.py does not support wheels")
@@ -24,6 +23,7 @@ if 'VIRTUAL_ENV' in os.environ:
     BASE_ENV = Path(os.environ['VIRTUAL_ENV'])
 else:
     BASE_ENV = Path('/')
+
 # Kytos var folder
 VAR_PATH = BASE_ENV / 'var' / 'lib' / 'kytos'
 # Path for enabled NApps
@@ -187,6 +187,7 @@ class DevelopMode(develop):
         src = ENABL_PATH / '__init__.py'
         dst = CURR_DIR / 'napps' / '__init__.py'
         src.symlink_to(dst)
+
 
 setup(name='kytos_mef_eline',
       version='2.2.0',

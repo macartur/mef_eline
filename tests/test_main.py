@@ -1,15 +1,10 @@
 """Module to test the main napp file."""
 import json
-import sys
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from kytos.core import Controller
 from kytos.core.config import KytosConfig
-
-# pylint: disable=wrong-import-position
-sys.path.insert(0, '/var/lib/kytos/napps/..')
-# pylint: enable=wrong-import-position
 
 from napps.kytos.mef_eline.main import Main  # NOQA
 
@@ -30,7 +25,7 @@ class TestMain(TestCase):
         expected_events = ['kytos/core.shutdown',
                            'kytos/core.shutdown.kytos/mef_eline',
                            'kytos/topology.updated']
-        actual_events = self.get_event_listeners(self.napp)
+        actual_events = self.napp.listeners()
         self.assertEqual(expected_events, actual_events)
 
     def test_verify_api_urls(self):
@@ -203,13 +198,3 @@ class TestMain(TestCase):
         """Return a flask api test client."""
         napp.controller.api_server.register_napp_endpoints(napp)
         return napp.controller.api_server.app.test_client()
-
-    @staticmethod
-    def get_event_listeners(napp):
-        """Return the event listeners name.
-
-        Returns:
-            list: list with all events listeners registered.
-
-        """
-        return napp.listeners()

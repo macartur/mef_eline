@@ -1,5 +1,4 @@
 """Module to test the schedule.py file."""
-import sys
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
@@ -7,12 +6,8 @@ from kytos.core.interface import TAG, UNI, Interface
 from kytos.core.switch import Switch
 from kytos.core.link import Link
 
-# pylint: disable=wrong-import-position
-sys.path.insert(0, '/var/lib/kytos/napps/..')
-# pylint: enable=wrong-import-position
-
-from napps.kytos.mef_eline.models import EVC  # NOQA
-from napps.kytos.mef_eline.settings import MANAGER_URL  # NOQA
+from napps.kytos.mef_eline.models import EVC
+from napps.kytos.mef_eline.settings import MANAGER_URL
 
 
 class TestEVC(TestCase):  # pylint: disable=too-many-public-methods

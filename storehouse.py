@@ -7,7 +7,7 @@ class StoreHouse:
     """Class to handle storehouse."""
 
     def __init__(self, controller):
-        """Method to initialize the storehouse."""
+        """Create a storehouse instance."""
         self.controller = controller
         self.namespace = 'kytos.mef_eline.circuits'
         self.box = None

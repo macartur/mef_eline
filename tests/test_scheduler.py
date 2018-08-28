@@ -1,5 +1,4 @@
 """Module to test the schedule.py file."""
-import sys
 from datetime import datetime
 from unittest import TestCase
 from unittest.mock import patch
@@ -7,12 +6,8 @@ from unittest.mock import patch
 from apscheduler.triggers.cron import CronTrigger
 from pytz import utc
 
-# pylint: disable=wrong-import-position
-sys.path.insert(0, '/var/lib/kytos/napps/..')
-# pylint: enable=wrong-import-position
-
-from napps.kytos.mef_eline.models import EVC  # NOQA
-from napps.kytos.mef_eline.scheduler import CircuitSchedule, Scheduler  # NOQA
+from napps.kytos.mef_eline.models import EVC
+from napps.kytos.mef_eline.scheduler import CircuitSchedule, Scheduler
 
 
 class TestCircuitSchedule(TestCase):
