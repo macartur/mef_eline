@@ -109,7 +109,7 @@ class DynamicPathManager:
 
 
 class EVCBase(GenericEntity):
-    """"Class to represent a circuit."""
+    """Class to represent a circuit."""
 
     unique_attributes = ['name', 'uni_a', 'uni_z']
 
@@ -331,8 +331,10 @@ class EVCDeploy(EVCBase):
             switches.add(link.endpoint_b.switch)
 
         flows = [{'cookie': self.get_cookie()}]
+
         for switch in switches:
             self.send_flow_mods(switch, flows, 'delete')
+
         self.deactivate()
 
     @staticmethod
