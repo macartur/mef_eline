@@ -84,12 +84,24 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         self.assertFalse(evc.should_deploy(attributes['primary_links']))
 
     @patch('napps.kytos.mef_eline.models.requests')
-    def test_send_flow_mods(self, requests_mock):
+    def test_send_flow_mods_case1(self, requests_mock):
         """Test if you are sending flow_mods."""
         flow_mods = {"id": 20}
         switch = Mock(spec=Switch, id=1)
         EVC.send_flow_mods(switch, flow_mods)
         expected_endpoint = f"{MANAGER_URL}/flows/{switch.id}"
+        expected_data = {"flows": flow_mods}
+        self.assertEqual(requests_mock.post.call_count, 1)
+        requests_mock.post.assert_called_once_with(expected_endpoint,
+                                                   json=expected_data)
+
+    @patch('napps.kytos.mef_eline.models.requests')
+    def test_send_flow_mods_case2(self, requests_mock):
+        """Test if you are sending flow_mods."""
+        flow_mods = {"id": 20}
+        switch = Mock(spec=Switch, id=1)
+        EVC.send_flow_mods(switch, flow_mods, command='delete')
+        expected_endpoint = f"{MANAGER_URL}/delete/{switch.id}"
         expected_data = {"flows": flow_mods}
         self.assertEqual(requests_mock.post.call_count, 1)
         requests_mock.post.assert_called_once_with(expected_endpoint,
@@ -179,7 +191,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
     def test_install_uni_flows(send_flow_mods_mock):
         """Test install uni flows method.
 
-        This test will verify the flows send to the send_flows_mods method.
+        This test will verify the flows send to the send_flow_mods method.
         """
         uni_a = get_uni_mocked(interface_port=2, tag_value=82,
                                switch_id="switch_uni_a", is_valid=True)
@@ -260,7 +272,7 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
     def test_install_nni_flows(send_flow_mods_mock):
         """Test install nni flows method.
 
-        This test will verify the flows send to the send_flows_mods method.
+        This test will verify the flows send to the send_flow_mods method.
         """
         uni_a = get_uni_mocked(interface_port=2, tag_value=82,
                                switch_id="switch_uni_a", is_valid=True)
@@ -388,3 +400,84 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         self.assertEqual(chose_vlans_mock.call_count, 0)
         self.assertEqual(log_mock.info.call_count, 0)
         self.assertFalse(deployed)
+
+    @patch('napps.kytos.mef_eline.models.log')
+    @patch('napps.kytos.mef_eline.models.EVC.choose_vlans')
+    @patch('napps.kytos.mef_eline.models.EVC.install_nni_flows')
+    @patch('napps.kytos.mef_eline.models.EVC.install_uni_flows')
+    @patch('napps.kytos.mef_eline.models.EVC.activate')
+    @patch('napps.kytos.mef_eline.models.EVC.should_deploy')
+    @patch('napps.kytos.mef_eline.models.EVC.discover_new_path')
+    def test_deploy_without_path_case1(self, *args):
+        """Test if not path is found a dynamic path is used."""
+        (discover_new_path_mocked, should_deploy_mock, activate_mock,
+         install_uni_flows_mock, install_nni_flows, chose_vlans_mock,
+         log_mock) = args
+
+        should_deploy_mock.return_value = True
+        uni_a = get_uni_mocked(interface_port=2, tag_value=82,
+                               switch_id="switch_uni_a", is_valid=True)
+        uni_z = get_uni_mocked(interface_port=3, tag_value=83,
+                               switch_id="switch_uni_z", is_valid=True)
+
+        attributes = {
+            "name": "custom_name",
+            "uni_a": uni_a,
+            "uni_z": uni_z,
+            "enabled": True,
+            "dynamic_backup_path": True
+        }
+
+        dynamic_backup_path = Path([
+                get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
+                                metadata={"s_vlan": 5}),
+                get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
+                                metadata={"s_vlan": 6})
+        ])
+
+        evc = EVC(**attributes)
+        discover_new_path_mocked.return_value = dynamic_backup_path
+        deployed = evc.deploy()
+
+        self.assertEqual(should_deploy_mock.call_count, 1)
+        self.assertEqual(discover_new_path_mocked.call_count, 1)
+        self.assertEqual(activate_mock.call_count, 1)
+        self.assertEqual(install_uni_flows_mock.call_count, 1)
+        self.assertEqual(install_nni_flows.call_count, 1)
+        self.assertEqual(chose_vlans_mock.call_count, 1)
+        self.assertEqual(log_mock.info.call_count, 1)
+        self.assertTrue(deployed)
+
+    @patch('napps.kytos.mef_eline.models.EVC.send_flow_mods')
+    def test_remove_current_flows(self, send_flow_mods_mocked):
+        """Test remove current flows."""
+        uni_a = get_uni_mocked(interface_port=2, tag_value=82,
+                               switch_id="switch_uni_a", is_valid=True)
+        uni_z = get_uni_mocked(interface_port=3, tag_value=83,
+                               switch_id="switch_uni_z", is_valid=True)
+
+        attributes = {
+            "name": "custom_name",
+            "uni_a": uni_a,
+            "uni_z": uni_z,
+            "active": True,
+            "enabled": True,
+            "primary_links": [
+                get_link_mocked(endpoint_a_port=9, endpoint_b_port=10,
+                                metadata={"s_vlan": 5}),
+                get_link_mocked(endpoint_a_port=11, endpoint_b_port=12,
+                                metadata={"s_vlan": 6})
+            ]
+        }
+
+        evc = EVC(**attributes)
+        evc.current_path = evc.primary_links
+        evc.remove_current_flows()
+
+        self.assertEqual(send_flow_mods_mocked.call_count, 2)
+        self.assertFalse(evc.is_active())
+        flows = [{'cookie': evc.get_cookie()}]
+        switch1 = evc.primary_links[0].endpoint_a.switch
+        switch2 = evc.primary_links[0].endpoint_b.switch
+        send_flow_mods_mocked.assert_called_with(switch1, flows, 'delete')
+        send_flow_mods_mocked.assert_called_with(switch2, flows, 'delete')
