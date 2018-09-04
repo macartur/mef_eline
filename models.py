@@ -201,7 +201,7 @@ class EVCBase(GenericEntity):
 
         """
         for attribute, value in kwargs.items():
-            if attribute in self.unique_attributes:
+            if attribute in self.unique_attributes and attribute != 'name':
                 raise ValueError(f'{attribute} can\'t be be updated.')
             if hasattr(self, attribute):
                 setattr(self, attribute, value)

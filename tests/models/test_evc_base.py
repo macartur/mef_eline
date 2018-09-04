@@ -75,11 +75,9 @@ class TestEVC(TestCase):  # pylint: disable=too-many-public-methods
         update_dict = {
             "name": "circuit_name_2"
         }
-        error_message = "name can't be be updated."
-        with self.assertRaises(ValueError) as handle_error:
-            evc = EVC(**attributes)
-            evc.update(**update_dict)
-        self.assertEqual(str(handle_error.exception), error_message)
+        evc = EVC(**attributes)
+        evc.update(**update_dict)
+        self.assertEqual(evc.name, update_dict['name'])
 
     def test_update_uni_a(self):
         """Test if raises and error when trying to update the uni_a."""
