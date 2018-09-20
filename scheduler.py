@@ -48,6 +48,7 @@ class Scheduler:
         """Create a new schedule structure."""
         self.scheduler = BackgroundScheduler(timezone=utc)
         self.scheduler.start()
+        self.already_registered_jobs = set()
 
     def shutdown(self):
         """Shutdown the scheduler."""
@@ -56,6 +57,9 @@ class Scheduler:
     def add(self, circuit):
         """Add all circuit_scheduler from specific circuit."""
         for circuit_scheduler in circuit.circuit_scheduler:
+            if circuit_scheduler.id in self.already_registered_jobs:
+                continue
+
             data = {'id': circuit_scheduler.id}
             action = None
 
@@ -79,6 +83,8 @@ class Scheduler:
                 cron = CronTrigger.from_crontab(circuit_scheduler.frequency,
                                                 timezone=utc)
                 self.scheduler.add_job(action, cron, **data)
+
+            self.already_registered_jobs.add(circuit_scheduler.id)
 
     def cancel_job(self, circuit_scheduler_id):
         """Cancel a specific job from scheduler."""

@@ -88,7 +88,7 @@ class TestScheduler(TestCase):
 
     @patch('apscheduler.schedulers.background.BackgroundScheduler.add_job')
     @patch('napps.kytos.mef_eline.models.EVC._validate')
-    def test_new_circuit_with_run_time(self, validate_mock,
+    def test_new_circuit_with_run_date(self, validate_mock,
                                        scheduler_add_job_mock):
         """Test if add new circuit with run_time."""
         scheduler_add_job_mock.return_value = True
@@ -109,6 +109,8 @@ class TestScheduler(TestCase):
             }
         scheduler_add_job_mock.assert_called_once_with(evc.remove, 'date',
                                                        **expected_parameters)
+        self.assertIn(circuit_scheduler.id,
+                      self.scheduler.already_registered_jobs)
 
     @patch('apscheduler.schedulers.background.BackgroundScheduler.add_job')
     @patch('napps.kytos.mef_eline.models.EVC._validate')
@@ -139,6 +141,8 @@ class TestScheduler(TestCase):
         }
         scheduler_add_job_mock.assert_called_once_with(evc.deploy, 'interval',
                                                        **expected_parameters)
+        self.assertIn(circuit_scheduler.id,
+                      self.scheduler.already_registered_jobs)
 
     @patch('apscheduler.triggers.cron.CronTrigger.from_crontab')
     @patch('apscheduler.schedulers.background.BackgroundScheduler.add_job')
@@ -172,3 +176,6 @@ class TestScheduler(TestCase):
         }
         scheduler_add_job_mock.assert_called_once_with(evc.deploy, trigger,
                                                        **expected_parameters)
+
+        self.assertIn(circuit_scheduler.id,
+                      self.scheduler.already_registered_jobs)
